@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>鸭腿叔叔</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="introOverlay" class="intro-overlay" role="dialog" aria-modal="true" aria-labelledby="introTitle">
+      <section class="intro-card">
+        <p class="eyebrow">虚构经营游戏</p>
+        <h1 id="introTitle">鸭腿叔叔</h1>
+        <p>你经营一家校园烤腿摊。14 天里，消息会随着时间陆续出现，红点表示需要回复。</p>
+        <p>回复太慢，群聊、截图和猜测会自己发酵。</p>
+        <button id="startButton" class="primary-button" type="button">开始营业</button>
+      </section>
+    </div>
+
+    <main class="app-shell">
+      <section class="game-shell" aria-labelledby="game-title">
+        <header class="game-header">
+          <img class="brand-avatar" src="./assets/duck-leg-uncle-avatar.png" alt="" />
+          <div>
+            <p class="eyebrow">虚构经营游戏</p>
+            <h1 id="game-title">鸭腿叔叔</h1>
+          </div>
+          <div class="header-actions">
+            <div class="top-time" aria-label="时间进度">
+              <div>
+                <span id="dayLabel">第 1 天</span>
+                <span id="clockLabel">09:00</span>
+              </div>
+              <div class="top-time-track"><span id="dayProgressBar"></span></div>
+            </div>
+            <button id="settingsButton" class="icon-button" type="button" aria-label="设置" title="设置">⚙</button>
+          </div>
+        </header>
+
+        <section class="metrics-bar" aria-label="关键数据">
+          <details class="metric-card">
+            <summary>
+              <span>收益</span>
+              <strong><i id="profitValue"></i></strong>
+            </summary>
+            <div id="profitDetails" class="metric-detail"></div>
+          </details>
+          <details class="metric-card danger">
+            <summary>
+              <span>风险</span>
+              <strong><i id="riskValue"></i></strong>
+            </summary>
+            <div id="riskDetails" class="metric-detail"></div>
+          </details>
+          <details class="metric-card traffic">
+            <summary>
+              <span>流量</span>
+              <strong><i id="trafficValue"></i></strong>
+            </summary>
+            <div id="trafficDetails" class="metric-detail"></div>
+          </details>
+        </section>
+
+        <section class="play-area">
+          <article class="phone-panel" aria-label="聊天窗口">
+            <div id="dayStatus" class="status-strip">等待开摊</div>
+            <div id="ticker" class="ticker" aria-live="polite"></div>
+            <nav id="taskBanners" class="chat-list" aria-label="微信会话列表"></nav>
+            <section id="conversationView" class="conversation-view" aria-label="当前对话" hidden>
+              <div class="phone-head">
+                <button id="backToChatsButton" class="back-button" type="button" aria-label="返回聊天列表">‹</button>
+                <span id="phoneTitle">白鲸大学西南门鹅腿群34</span>
+                <span id="unreadBadge">328</span>
+              </div>
+              <div id="messages" class="messages"></div>
+              <div class="reply-panel">
+                <span id="phaseTag">进货</span>
+                <h2 id="eventTitle">我该怎么回？</h2>
+              <p id="eventBody"></p>
+              <div id="choices" class="choices"></div>
+            </div>
+            </section>
+            <section id="endingView" class="ending-view" aria-label="结局" hidden>
+              <p class="eyebrow">经营结局</p>
+              <h2 id="endingTitle"></h2>
+              <p id="endingBody"></p>
+              <div id="endingAnalysis" class="ending-analysis"></div>
+              <button id="againButton" class="primary-button" type="button">再试一次</button>
+            </section>
+          </article>
+        </section>
+
+        <aside id="settingsPanel" class="settings-panel" aria-label="设置面板" hidden>
+          <div class="settings-head">
+            <strong>设置</strong>
+            <button id="closeSettingsButton" class="plain-button" type="button">关闭</button>
+          </div>
+
+          <section>
+            <div class="panel-title">时间速度</div>
+            <div class="speed-control" aria-label="时间速度">
+              <button class="speed-button" type="button" data-speed="0">暂停</button>
+              <button class="speed-button" type="button" data-speed="0.5">0.5x</button>
+              <button class="speed-button active" type="button" data-speed="1">1x</button>
+              <button class="speed-button" type="button" data-speed="2">2x</button>
+            </div>
+          </section>
+
+          <section>
+            <div class="panel-title">经营进度</div>
+            <div class="flow-panel" aria-label="经营进度">
+              <div class="flow-row">
+                <span>营业时间</span>
+                <div class="flow-track"><span id="settingsDayProgressBar"></span></div>
+              </div>
+              <div class="flow-row danger">
+                <span>舆论扩散</span>
+                <div class="flow-track"><span id="spreadProgressBar"></span></div>
+              </div>
+            </div>
+          </section>
+
+          <button id="resetButton" class="primary-button subtle" type="button">重新开始</button>
+
+          <details class="drawer" open>
+            <summary>历史事件</summary>
+            <section class="history-panel" aria-label="历史事件">
+              <ol id="historyList" class="history-list"></ol>
+            </section>
+          </details>
+
+          <details class="drawer">
+            <summary>详细账本</summary>
+          <div class="drawer-grid">
+            <section class="ledger">
+              <div class="panel-title">经营数值</div>
+              <div id="stats" class="stats-grid"></div>
+            </section>
+
+            <section id="logPanel" class="log-panel" aria-label="经营日志">
+              <div class="panel-title">经营日志</div>
+              <ol id="logList"></ol>
+            </section>
+          </div>
+          </details>
+
+          <section class="disclaimer-panel">
+            <div class="panel-title">免责声明</div>
+            <p>本游戏为虚构游戏。游戏中的人物、学校、群聊、店铺、事件与经营细节均为虚构，如有巧合，纯属雷同。</p>
+          </section>
+
+        </aside>
+
+        <p class="notice">本游戏为虚构游戏，如有巧合，纯属雷同。</p>
+      </section>
+    </main>
+
+    <script src="./game.js"></script>
+  </body>
+</html>
