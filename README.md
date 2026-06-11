@@ -4,16 +4,22 @@
 
 ## 运行
 
-这是静态页面项目，直接打开 `index.html` 即可运行。
+这是静态页面项目。推荐用任意静态服务器部署仓库根目录，例如：
 
-也可以用任意静态服务器部署仓库根目录，例如 GitHub Pages、Cloudflare Pages、Vercel 或 Netlify。
+```bash
+python3 -m http.server 5177
+```
+
+然后打开 `http://localhost:5177/index.html`。
 
 ## 文件
 
 - `index.html`：页面结构
 - `styles.css`：界面样式
-- `game.js`：剧情、状态和交互逻辑
-- `assets/duck-leg-uncle-avatar.png`：玩家头像
+- `game.js`：剧情排程、状态和交互逻辑
+- `src/`：配置、轻量经营结算、存档、工具函数
+- `scripts/`：平衡、存档和条件剧情验证脚本
+- `assets/stall-avatar.png`：压缩后的玩家头像
 
 ## 说明
 

@@ -11,66 +11,119 @@
       <section class="intro-card">
         <p class="eyebrow">虚构经营游戏</p>
         <h1 id="introTitle">鸭腿叔叔</h1>
-        <p>你经营一家校园烤腿摊。14 天里，消息会随着时间陆续出现，红点表示需要回复。</p>
-        <p>回复太慢，群聊、截图和猜测会自己发酵。</p>
-        <button id="startButton" class="primary-button" type="button">开始营业</button>
+        <div class="tutorial-panel" aria-live="polite">
+          <div class="tutorial-step-label" id="tutorialStepLabel">新手教程 1 / 6</div>
+          <h2 id="tutorialTitle">先看两条线</h2>
+          <p id="tutorialBody">这个游戏分成聊天和经营两部分。聊天会推动剧情，经营会持续改变存款、日收益、风险和流量。</p>
+          <ul id="tutorialList" class="tutorial-list">
+            <li>聊天里处理红点，回复会影响口碑、合规和剧情路线。</li>
+            <li>经营里调价格、政策、货源、摊贩和区域。</li>
+          </ul>
+          <label class="school-setup" for="schoolNameInput" hidden>
+            <span>起步学校</span>
+            <span class="school-name-field">
+              <input id="schoolNameInput" type="text" placeholder="最多五个字" autocomplete="off" />
+              <b>大学</b>
+            </span>
+            <small id="schoolNameError">后续聊天和市场都会使用这个名字。</small>
+          </label>
+        </div>
+        <div class="tutorial-progress" aria-hidden="true">
+          <span class="active"></span>
+          <span></span>
+          <span></span>
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+        <div class="tutorial-actions">
+          <button id="skipTutorialButton" class="secondary-button" type="button">跳过教程</button>
+          <button id="nextTutorialButton" class="primary-button" type="button">下一步</button>
+          <button id="startButton" class="primary-button" type="button" hidden>开始营业</button>
+        </div>
+        <div id="savePanel" class="save-panel" hidden>
+          <span id="saveSummary">发现上次经营进度。</span>
+          <div>
+            <button id="continueButton" class="primary-button" type="button">继续经营</button>
+            <button id="newRunButton" class="secondary-button" type="button">开新局</button>
+          </div>
+        </div>
       </section>
     </div>
 
     <main class="app-shell">
       <section class="game-shell" aria-labelledby="game-title">
         <header class="game-header">
-          <img class="brand-avatar" src="./assets/duck-leg-uncle-avatar.png" alt="" />
+          <img class="brand-avatar" src="./assets/stall-avatar.png" width="256" height="256" decoding="async" alt="" />
           <div>
             <p class="eyebrow">虚构经营游戏</p>
             <h1 id="game-title">鸭腿叔叔</h1>
           </div>
           <div class="header-actions">
             <div class="top-time" aria-label="时间进度">
-              <div>
-                <span id="dayLabel">第 1 天</span>
-                <span id="clockLabel">09:00</span>
-              </div>
-              <div class="top-time-track"><span id="dayProgressBar"></span></div>
+              <span id="dayLabel">第 1 天</span>
             </div>
+            <button id="pauseButton" class="icon-button pause-button" type="button" aria-label="暂停" title="暂停">⏸</button>
             <button id="settingsButton" class="icon-button" type="button" aria-label="设置" title="设置">⚙</button>
           </div>
         </header>
 
-        <section class="metrics-bar" aria-label="关键数据">
-          <details class="metric-card">
-            <summary>
-              <span>收益</span>
-              <strong><i id="profitValue"></i></strong>
-            </summary>
-            <div id="profitDetails" class="metric-detail"></div>
-          </details>
-          <details class="metric-card danger">
-            <summary>
-              <span>风险</span>
-              <strong><i id="riskValue"></i></strong>
-            </summary>
-            <div id="riskDetails" class="metric-detail"></div>
-          </details>
-          <details class="metric-card traffic">
-            <summary>
-              <span>流量</span>
-              <strong><i id="trafficValue"></i></strong>
-            </summary>
-            <div id="trafficDetails" class="metric-detail"></div>
-          </details>
+        <section class="money-panel" aria-label="资金与状态">
+          <div class="bank-card" aria-label="存款">
+            <span>存款</span>
+            <strong id="bankValue">0 鸭币</strong>
+          </div>
+          <div class="money-side">
+            <div class="daily-income" aria-label="日收益">
+              <span>日收益</span>
+              <strong id="dailyIncomeValue">0 鸭币/天</strong>
+            </div>
+            <div class="compact-bars" aria-label="风险和流量">
+              <div class="compact-bar danger">
+                <span>风险</span>
+                <strong><i id="riskValue"></i></strong>
+              </div>
+              <div class="compact-bar traffic">
+                <span>流量</span>
+                <strong><i id="trafficValue"></i></strong>
+              </div>
+            </div>
+          </div>
         </section>
 
+        <section id="stallScene" class="stall-scene" aria-label="摊位状态">
+          <div class="stall-visual" aria-hidden="true">
+            <div class="stall-awning"></div>
+            <div class="stall-counter">
+              <img src="./assets/stall-avatar.png" width="256" height="256" loading="lazy" decoding="async" alt="" />
+              <span class="grill-fire"></span>
+            </div>
+            <div class="queue-dots">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+          </div>
+          <div class="stall-copy">
+            <strong id="stallSceneTitle">准备开摊</strong>
+            <span id="stallSceneText">价格、摊贩和风险会一起决定今天的生意。</span>
+          </div>
+        </section>
+
+        <nav class="main-tabs" aria-label="主栏目">
+          <button class="main-tab active" type="button" data-main-tab="chat">聊天</button>
+          <button class="main-tab" type="button" data-main-tab="control">经营</button>
+        </nav>
+
         <section class="play-area">
-          <article class="phone-panel" aria-label="聊天窗口">
+          <article class="phone-panel tab-panel" data-main-panel="chat" aria-label="聊天窗口">
             <div id="dayStatus" class="status-strip">等待开摊</div>
-            <div id="ticker" class="ticker" aria-live="polite"></div>
             <nav id="taskBanners" class="chat-list" aria-label="微信会话列表"></nav>
             <section id="conversationView" class="conversation-view" aria-label="当前对话" hidden>
               <div class="phone-head">
                 <button id="backToChatsButton" class="back-button" type="button" aria-label="返回聊天列表">‹</button>
-                <span id="phoneTitle">白鲸大学西南门鹅腿群34</span>
-                <span id="unreadBadge">328</span>
+                <span id="phoneTitle">起步学校西门烤腿群34</span>
+                <span id="unreadBadge">0</span>
               </div>
               <div id="messages" class="messages"></div>
               <div class="reply-panel">
@@ -84,10 +137,81 @@
               <p class="eyebrow">经营结局</p>
               <h2 id="endingTitle"></h2>
               <p id="endingBody"></p>
+              <div id="endingScorecard" class="ending-scorecard" aria-label="经营成绩单"></div>
               <div id="endingAnalysis" class="ending-analysis"></div>
               <button id="againButton" class="primary-button" type="button">再试一次</button>
             </section>
           </article>
+
+          <section class="control-panel tab-panel" data-main-panel="control" aria-label="经营控制" hidden>
+            <section>
+              <div class="panel-title">定价</div>
+              <div class="pricing-panel" aria-label="定价">
+                <label class="price-control">
+                  <span>售价</span>
+                  <input id="priceInput" type="range" min="12" max="100" step="1" value="22" />
+                  <strong id="priceLabel">22 鸭币</strong>
+                </label>
+                <div id="priceHint" class="panel-hint"></div>
+              </div>
+            </section>
+
+            <section>
+              <div class="panel-title">今日诊断</div>
+              <div id="diagnosisPanel" class="diagnosis-panel" aria-label="今日经营诊断"></div>
+            </section>
+
+            <section data-feature-day="3">
+              <div class="panel-title">区域</div>
+              <div id="marketPanel" class="market-panel" aria-label="市场面板"></div>
+            </section>
+
+            <section data-feature-day="2">
+              <div class="panel-title">声量</div>
+              <div class="action-grid" aria-label="声量经营">
+                <button id="reputationButton" class="action-button" type="button">
+                  <strong>提高声望</strong>
+                  <span>60 鸭币</span>
+                </button>
+                <button id="trafficButton" class="action-button" type="button">
+                  <strong>买流量</strong>
+                  <span>70 鸭币</span>
+                </button>
+              </div>
+            </section>
+
+            <section>
+              <div class="panel-title">摊贩</div>
+              <div class="staff-panel" aria-label="员工控制">
+                <button class="step-button" type="button" data-staff-delta="-1">-</button>
+                <div>
+                  <strong id="staffLabel">1 人</strong>
+                  <span id="staffHint">基础摊位</span>
+                </div>
+                <button class="step-button" type="button" data-staff-delta="1">+</button>
+              </div>
+            </section>
+
+            <section class="compact-section" data-feature-day="2">
+              <div class="panel-title">政策</div>
+              <div id="policyPanel" class="option-panel" aria-label="经营政策"></div>
+            </section>
+
+            <section class="compact-section" data-feature-day="2">
+              <div class="panel-title">货源</div>
+              <div id="sourcePanel" class="option-panel" aria-label="货源"></div>
+            </section>
+
+            <section class="secondary-section" data-feature-day="4">
+              <div class="panel-title">今日预估</div>
+              <div id="modelPanel" class="model-panel" aria-label="今日预估"></div>
+            </section>
+
+            <section class="secondary-section" data-feature-day="4">
+              <div class="panel-title">路线倾向</div>
+              <div id="routePanel" class="route-panel" aria-label="路线倾向"></div>
+            </section>
+          </section>
         </section>
 
         <aside id="settingsPanel" class="settings-panel" aria-label="设置面板" hidden>
@@ -96,33 +220,9 @@
             <button id="closeSettingsButton" class="plain-button" type="button">关闭</button>
           </div>
 
-          <section>
-            <div class="panel-title">时间速度</div>
-            <div class="speed-control" aria-label="时间速度">
-              <button class="speed-button" type="button" data-speed="0">暂停</button>
-              <button class="speed-button" type="button" data-speed="0.5">0.5x</button>
-              <button class="speed-button active" type="button" data-speed="1">1x</button>
-              <button class="speed-button" type="button" data-speed="2">2x</button>
-            </div>
-          </section>
-
-          <section>
-            <div class="panel-title">经营进度</div>
-            <div class="flow-panel" aria-label="经营进度">
-              <div class="flow-row">
-                <span>营业时间</span>
-                <div class="flow-track"><span id="settingsDayProgressBar"></span></div>
-              </div>
-              <div class="flow-row danger">
-                <span>舆论扩散</span>
-                <div class="flow-track"><span id="spreadProgressBar"></span></div>
-              </div>
-            </div>
-          </section>
-
           <button id="resetButton" class="primary-button subtle" type="button">重新开始</button>
 
-          <details class="drawer" open>
+          <details class="drawer">
             <summary>历史事件</summary>
             <section class="history-panel" aria-label="历史事件">
               <ol id="historyList" class="history-list"></ol>
@@ -155,6 +255,6 @@
       </section>
     </main>
 
-    <script src="./game.js"></script>
+    <script type="module" src="./game.js"></script>
   </body>
 </html>
