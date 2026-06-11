@@ -1,4 +1,4 @@
-import { operatingSnapshot } from "./src/economy.js";
+import { availableStaffForMarket, operatingSnapshot, requiredStaffForActiveMarkets } from "./src/economy.js";
 import { pickIncidentTemplate } from "./src/incidents.js";
 import { clearSavedGame, loadSavedGame, mergeSavedState, saveGameState } from "./src/save.js";
 import { selectStoryId, storyReasonForItem } from "./src/storyEngine.js";
@@ -14,6 +14,7 @@ import {
   marketOptions,
   metricDetails,
   operatingModel,
+  priceBounds,
   policyOptions,
   routeDetails,
   routeRules,
@@ -41,8 +42,8 @@ const tutorialSteps = [
     items: ["聊天里处理红点，回复会影响口碑、合规和剧情路线。", "经营里调价格、政策、货源、摊贩和区域。"],
   },
   {
-    title: "钱按天持续流动",
-    body: "一天大约 40 秒。存款会按当前日收益连续增长，日收益由价格、销量、成本和摊贩工资计算。",
+    title: "每天先出摊",
+    body: "一天默认大约 40 秒。当天点了今日出摊后，存款才会按当前日收益连续变化。",
     items: ["售价太低会压缩毛利，售价太高会压低需求。", "摊贩提高产能，但每天都要发工资。"],
   },
   {
@@ -53,7 +54,7 @@ const tutorialSteps = [
   {
     title: "风险会慢慢累积",
     body: "货源、政策、超载、买流量和聊天选择都会改变风险。回消息前可以按暂停，想清楚再回复。",
-    items: ["风险和流量是进度条，存款是具体鸭币。", "经营模块和剧情选择会一起塑造长期结局。"],
+    items: ["风险和流量是进度条，存款是具体鸭币。", "未处理的红点超时后会逐步带来风险压力。"],
   },
   {
     title: "撑过 15 天",
@@ -82,7 +83,10 @@ function savedGameSummary() {
 }
 
 function schoolBaseName(value = "") {
-  return String(value).replace(/\s+/g, "").replace(/大学$/, "");
+  return String(value)
+    .replace(/[<>&"'`]/g, "")
+    .replace(/\s+/g, "")
+    .replace(/大学$/, "");
 }
 
 function normalizeSchoolName(value = "") {
@@ -121,6 +125,57 @@ function syncSchoolNameInput(input = $("#schoolNameInput")) {
   return validation;
 }
 
+function schoolSetupMarkup() {
+  return `
+    <section class="school-dialog" role="group" aria-labelledby="schoolDialogTitle">
+      <div class="school-dialog-head">
+        <h3 id="schoolDialogTitle">填写起步学校</h3>
+        <span>第 6 步</span>
+      </div>
+      <label class="school-setup" for="schoolNameInput">
+        <span>学校简称</span>
+        <span class="school-name-field">
+          <input id="schoolNameInput" type="text" placeholder="最多五个字" autocomplete="off" />
+          <b>大学</b>
+        </span>
+        <small id="schoolNameError">后续聊天和市场都会使用这个名字。</small>
+      </label>
+    </section>
+  `;
+}
+
+function bindSchoolNameInput(input) {
+  if (!input || input.dataset.bound === "true") return;
+  input.dataset.bound = "true";
+  input.addEventListener("input", (event) => {
+    if (event.isComposing || event.target.dataset.composing === "true") return;
+    syncSchoolNameInput(event.target);
+  });
+  input.addEventListener("compositionstart", (event) => {
+    event.target.dataset.composing = "true";
+  });
+  input.addEventListener("compositionend", (event) => {
+    delete event.target.dataset.composing;
+    syncSchoolNameInput(event.target);
+  });
+}
+
+function ensureSchoolSetup() {
+  const host = $("#tutorialSetupHost");
+  if (!host) return null;
+  let input = host.querySelector("#schoolNameInput");
+  if (!input) {
+    host.innerHTML = schoolSetupMarkup();
+    input = host.querySelector("#schoolNameInput");
+  }
+  bindSchoolNameInput(input);
+  return input;
+}
+
+function clearSchoolSetup() {
+  $("#tutorialSetupHost")?.replaceChildren();
+}
+
 function homeSchoolName() {
   return normalizeSchoolName(state.homeSchoolName || defaultHomeSchoolName);
 }
@@ -129,12 +184,46 @@ function homeGroupTitle(kind = "goose") {
   return `${homeSchoolName()}西门${kind === "duck" ? "鸭腿" : "鹅腿"}群34`;
 }
 
+function campusGateForMarket(key) {
+  return key === "lion" ? "南门" : key === "deer" ? "北门" : "东门";
+}
+
+function campusMarketOption(index = 0) {
+  const key = selectedUniversityMarkets()[index] || "frog";
+  return { key, option: marketOptions[key] || marketOptions.frog };
+}
+
+function campusGroupTitle(kind = "goose", index = 0) {
+  const { key, option } = campusMarketOption(index);
+  return `${option.label}${campusGateForMarket(key)}${kind === "duck" ? "鸭腿" : "鹅腿"}群35`;
+}
+
 function formatText(text = "") {
+  const { option: firstCampus } = campusMarketOption(0);
+  const firstCampusShort = firstCampus.label.replace(/大学$/, "");
   return String(text)
+    .replaceAll(frogGooseGroup, campusGroupTitle("goose", 0))
+    .replaceAll(frogDuckGroup, campusGroupTitle("duck", 0))
+    .replaceAll("青蛙大学东门烤腿群35", campusGroupTitle("goose", 0).replace("鹅腿", "烤腿"))
+    .replaceAll("青蛙大学", firstCampus.label)
+    .replaceAll("青蛙", firstCampusShort)
     .replaceAll("白鲸大学", homeSchoolName())
     .replaceAll("白鲸", homeSchoolName().replace(/大学$/, ""))
     .replaceAll(whaleGooseGroup, homeGroupTitle("goose"))
     .replaceAll(whaleDuckGroup, homeGroupTitle("duck"));
+}
+
+function displayTaskText(item, text = "") {
+  return item?.formattedText ? String(text) : formatText(text);
+}
+
+function escapeHtml(value = "") {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
 function pickUniversityMarkets(seedText = "") {
@@ -147,9 +236,12 @@ function pickUniversityMarkets(seedText = "") {
 }
 
 function selectedUniversityMarkets() {
-  if (!state.selectedUniversityMarkets?.length) {
-    state.selectedUniversityMarkets = pickUniversityMarkets(homeSchoolName());
-  }
+  const homeName = homeSchoolName();
+  const fallback = pickUniversityMarkets(homeName);
+  const valid = (state.selectedUniversityMarkets || []).filter(
+    (key, index, list) => universityMarketKeys.includes(key) && marketOptions[key]?.label !== homeName && list.indexOf(key) === index,
+  );
+  state.selectedUniversityMarkets = [...valid, ...fallback.filter((key) => !valid.includes(key))].slice(0, 2);
   return state.selectedUniversityMarkets;
 }
 
@@ -187,6 +279,7 @@ function currentWhaleGroupTitle() {
 
 const dailyNoticeTask = {
   id: "daily-notice",
+  formattedText: true,
   banner: "今日经营",
   icon: "营",
   phase: "开卖",
@@ -202,20 +295,22 @@ const dailyNoticeTask = {
   },
   choices: [
     {
-      title: "我确认今天开卖",
-      desc: "发出今日经营通知。",
-      cost: "开始经营",
-      reply: "今天正常开卖，大家在小程序下单，到门口出示订单截图取餐。",
-      effects: { cash: 3, heat: 3, margin: 2 },
-      log: "我发出了今日经营通知。",
+      title: "我发今日出摊预告",
+      desc: "先把群里通知发出去，实际入账还要点今日出摊。",
+      cost: "通知",
+      reply: "今天有出摊计划，大家在小程序看库存，到门口出示订单截图取餐。",
+      effects: { heat: 2, margin: 1 },
+      log: "我发出了今日出摊预告，群里开始排单。",
     },
   ],
 };
 
 function dailyNoticeForCurrentState() {
+  if (isBusinessSuspended()) return null;
   return {
     ...dailyNoticeTask,
     id: `daily-notice-${state.calendarDay}`,
+    formattedText: true,
     phone: {
       ...dailyNoticeTask.phone,
       title: currentWhaleGroupTitle(),
@@ -488,24 +583,404 @@ function dailyIncidentForCurrentState() {
   };
 }
 
+const dailyManagementTemplates = [
+  {
+    key: "stock-plan",
+    banner: "备货安排",
+    icon: "备",
+    phase: "备货",
+    title: "今天按什么量备货",
+    body: "早上供应商能按不同批量送货。备太多容易压库存，备太少又会错过晚高峰。",
+    phoneTitle: "摊位备货群",
+    messages: [
+      ["供应商老王", "今天要按昨天的量送，还是多备一点？"],
+      ["摊贩小李", "多备能多卖，但剩货就麻烦。"],
+    ],
+    choices: [
+      {
+        title: "按预估量备货",
+        desc: "不冲也不缩，利润和压力都比较稳。",
+        reply: "按今天预估来，不临时加太多。",
+        effects: { margin: 1, documents: 1, heat: 1 },
+        log: "你按预估量备货，今天经营没有额外冒进。",
+      },
+      {
+        title: "多备晚高峰库存",
+        desc: "更可能多卖，也更容易剩货和赶工。",
+        reply: "今天多备一批，晚高峰不轻易断货。",
+        effects: { cash: 10, heat: 4, margin: 2, risk: 3, documents: -2 },
+        log: "你多备了晚高峰库存，销售弹性变大，库存和赶工压力也上来。",
+      },
+      {
+        title: "少备一点保周转",
+        desc: "少赚一些，但库存和出错压力下降。",
+        reply: "今天少备一点，卖完就收。",
+        effects: { cash: -6, heat: -2, reputation: 2, risk: -2, documents: 2 },
+        log: "你少备了一点，现金增速变慢，但当天节奏更稳。",
+      },
+    ],
+  },
+  {
+    key: "pickup-rules",
+    banner: "取餐规则",
+    icon: "取",
+    phase: "核销",
+    title: "取餐点今天怎么排队",
+    body: "队伍越快越热闹，核销越细越稳。取餐规则会影响销量、截图和投诉。",
+    phoneTitle: "取餐核销群",
+    messages: [
+      ["摊贩小李", "今晚是集中排队，还是按时间段叫号？"],
+      ["学生A", "昨天有人插队，今天能不能清楚点。"],
+    ],
+    choices: [
+      {
+        title: "按时间段核销",
+        desc: "少一点冲动单，排队和截图更清楚。",
+        reply: "今晚按时间段核销，提前到的先等一等。",
+        effects: { cash: -5, documents: 5, reputation: 3, risk: -4, heat: -1 },
+        log: "你把取餐改成分时段核销，效率慢一点，但截图和解释更清楚。",
+      },
+      {
+        title: "集中排队快取",
+        desc: "现场更热闹，但更容易乱。",
+        reply: "今晚集中排队，到了就按截图取。",
+        effects: { cash: 8, heat: 5, risk: 4, documents: -3, reputation: -1 },
+        log: "集中排队让摊前更热闹，也让核销错误更容易被截图。",
+      },
+      {
+        title: "加一个登记表",
+        desc: "花一点管理成本，换更强记录。",
+        reply: "今晚加登记表，订单号和取餐点都记一下。",
+        effects: { cash: -8, documents: 7, reputation: 2, risk: -3 },
+        log: "你加了取餐登记表，现金少一点，证据链更完整。",
+      },
+    ],
+  },
+  {
+    key: "product-page",
+    banner: "商品页面",
+    icon: "页",
+    phase: "页面",
+    title: "小程序页面今天怎么写",
+    body: "页面写得越热闹，转化越高；写得越清楚，后续争议越容易解释。",
+    phoneTitle: "小程序页面群",
+    messages: [
+      ["小程序助手", "今天商品名和说明要不要调整？"],
+      ["摊贩小李", "写太细会不会少人买。"],
+    ],
+    choices: [
+      {
+        title: "写清品类和重量",
+        desc: "转化慢一点，风险下降。",
+        reply: "今天把品类、重量和取餐说明写清楚。",
+        effects: { cash: -7, documents: 8, reputation: 3, risk: -5, heat: -2 },
+        log: "你把商品页写清楚，订单热度慢一点，但争议空间缩小。",
+      },
+      {
+        title: "主打限时热卖",
+        desc: "提高转化，也更容易被追问。",
+        reply: "标题先用限时热卖，说明保持简洁。",
+        effects: { cash: 9, heat: 6, risk: 4, documents: -3, conscience: -1 },
+        log: "限时热卖提高了转化，也让页面里的含糊处更显眼。",
+      },
+      {
+        title: "只更新库存数量",
+        desc: "影响小，保持原有节奏。",
+        reply: "今天只更新库存，其他先不动。",
+        effects: { cash: 2, heat: 1, risk: 1 },
+        log: "你只更新了库存数量，页面风险没有明显变化。",
+      },
+    ],
+  },
+  {
+    key: "staff-briefing",
+    banner: "摊贩分工",
+    icon: "工",
+    phase: "人员",
+    title: "今天摊贩怎么分工",
+    body: "一个人负责出餐，一个人负责核销会更稳，但效率和现金都会受到分工影响。",
+    phoneTitle: "摊贩工作群",
+    messages: [
+      ["摊贩小李", "今晚我负责烤，谁来核销？"],
+      ["摊贩小陈", "如果都赶出餐，队伍会快，但容易漏单。"],
+    ],
+    choices: [
+      {
+        title: "固定一人核销",
+        desc: "效率慢一些，出错率下降。",
+        reply: "今晚固定一人核销，别边烤边看截图。",
+        effects: { cash: -6, documents: 5, reputation: 3, risk: -4 },
+        log: "你安排固定核销，速度慢一点，但错单少了。",
+      },
+      {
+        title: "全员赶出餐",
+        desc: "卖得更快，也更容易漏单。",
+        reply: "今晚先赶出餐，核销现场看着办。",
+        effects: { cash: 11, heat: 4, risk: 5, documents: -4, reputation: -2 },
+        log: "全员赶出餐提高了销量，也把错单风险推高。",
+      },
+      {
+        title: "收摊后复盘错单",
+        desc: "当天影响小，长期记录稍好。",
+        reply: "今晚按原分工，收摊后把错单复盘出来。",
+        effects: { cash: 1, documents: 3, risk: -1, reputation: 1 },
+        log: "你让摊贩收摊后复盘错单，长期记录稍微清楚一点。",
+      },
+    ],
+  },
+];
+
+const supplySourceMeta = {
+  goose: {
+    short: "真鹅腿",
+    supplierLine: "鹅腿还是能拿，但量小、冷链贵，你得接受少卖和压钱。",
+  },
+  freshDuck: {
+    short: "鲜鸭腿",
+    supplierLine: "鲜鸭腿量稳，票也比较好补，利润没有边腿厚。",
+  },
+  frozenDuck: {
+    short: "低价鸭边腿",
+    supplierLine: "边腿便宜，量能撑起来，但批次和页面写法你自己要兜住。",
+  },
+};
+
+function sourceFocusFor(source) {
+  return source === "goose" ? "goose" : source === "freshDuck" ? "duck" : "cheapDuck";
+}
+
+function activeMarketCount() {
+  return Object.values(state.markets || {}).filter(Boolean).length;
+}
+
+function recordSupplyHistory(source = state.source, reason = "记录", details = {}) {
+  if (!sourceOptions[source]) return;
+  state.supplyHistory ||= [];
+  const entry = {
+    day: state.calendarDay,
+    source,
+    reason,
+    price: Math.round(state.price),
+    markets: activeMarketCount(),
+    sales: Math.max(0, Math.round(details.sales || 0)),
+  };
+  state.supplyHistory = [
+    ...state.supplyHistory.filter((item) => !(item.day === entry.day && item.reason === entry.reason)),
+    entry,
+  ].slice(-32);
+}
+
+function supplyHistoryEntries() {
+  return (state.supplyHistory || []).filter((entry) => entry && sourceOptions[entry.source]);
+}
+
+function supplyUsageSummary() {
+  const entries = supplyHistoryEntries();
+  const recent = entries.slice(-5);
+  const last = recent.at(-1);
+  const previous = recent.at(-2);
+  const counts = recent.reduce((map, entry) => {
+    map[entry.source] = (map[entry.source] || 0) + 1;
+    return map;
+  }, {});
+  const dominant = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] || state.source;
+  let streak = 0;
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    if (entries[index].source !== (last?.source || state.source)) break;
+    streak += 1;
+  }
+  return { entries, recent, last, previous, dominant, streak };
+}
+
+function supplierMemoryMessage() {
+  const { entries, last, previous, dominant, streak } = supplyUsageSummary();
+  if (!entries.length) return "你前面还没留下稳定用货记录，这次先把接下来两天的货定清楚。";
+  const lastName = supplySourceMeta[last.source]?.short || sourceOptions[last.source].label;
+  if (streak >= 3) {
+    return `我看记录里连续 ${streak} 次都是${lastName}，这条线可以继续，但别今天一个说法明天一个说法。`;
+  }
+  if (previous && previous.source !== last.source) {
+    const previousName = supplySourceMeta[previous.source]?.short || sourceOptions[previous.source].label;
+    return `上次从${previousName}换到${lastName}，页面和群里最好跟着改，不然同学会追问到底卖什么腿。`;
+  }
+  const dominantName = supplySourceMeta[dominant]?.short || sourceOptions[dominant].label;
+  return `最近记录主要是${dominantName}，今天我按这个口径问你，但你也可以改。`;
+}
+
+function supplierScaleMessage() {
+  const markets = activeMarketCount();
+  const summary = getMetricSummary();
+  if (markets >= 3) return `你现在 ${markets} 个点位都要货，稳定量比单价更重要。`;
+  if (summary.risk >= 70) return "你现在风险不低，便宜货会让短期现金好看，但后面更难解释。";
+  if (state.documents >= 72) return "你这几天票据还算清楚，要换货源就把批次也一起写清。";
+  return "你先告诉我接下来两天按哪种货走，我好安排批次和票。";
+}
+
+function recurringSupplierTaskForCurrentState() {
+  if (state.calendarDay < 2 || state.calendarDay % 2 !== 0) return null;
+  const currentName = supplySourceMeta[state.source]?.short || sourceOptions[state.source].label;
+  const memory = supplierMemoryMessage();
+  const scale = supplierScaleMessage();
+  return {
+    id: `supplier-cycle-${state.calendarDay}`,
+    banner: "供应商老王",
+    icon: "供",
+    phase: "两日订货",
+    title: "老王来问接下来两天用什么货",
+    body: `${memory}${scale} 当前经营面板选的是${currentName}。`,
+    phone: {
+      title: "供应商老王",
+      messages: [
+        ["供应商老王", memory],
+        ["供应商老王", scale],
+        ["供应商老王", "这次你定一个，我按这个给你排接下来两天的货。"],
+      ],
+    },
+    choices: [
+      {
+        title: "这两天先要真鹅腿",
+        desc: "成本高、量少，票据最清楚。",
+        reply: "这两天先按真鹅腿排，量少就少卖，票据和冷链给我留清楚。",
+        supplySource: "goose",
+        effects: { cash: -14, documents: 7, reputation: 4, risk: -5, heat: -2, cost: 5, margin: -4 },
+        log: "你向老王定了真鹅腿，接下来两天供货更清楚，但现金和毛利压力上升。",
+      },
+      {
+        title: "这两天走稳定鲜鸭腿",
+        desc: "供货稳定，利润和解释空间居中。",
+        reply: "这两天走稳定鲜鸭腿，页面也按鸭腿写清楚。",
+        supplySource: "freshDuck",
+        effects: { cash: 2, documents: 3, reputation: 2, risk: -2, margin: 1 },
+        log: "你向老王定了稳定鲜鸭腿，供货和菜单口径更容易对齐。",
+      },
+      {
+        title: "这两天要低价鸭边腿",
+        desc: "现金压力小，批次和食品疑点更重。",
+        reply: "这两天先要低价鸭边腿，别断货，票据你后面补。",
+        supplySource: "frozenDuck",
+        effects: { cash: 14, heat: 6, risk: 8, documents: -6, conscience: -4, margin: 5 },
+        flag: ["shadyStock", true],
+        log: "你向老王定了低价鸭边腿，短期现金好看，批次和食品疑点继续堆高。",
+      },
+    ],
+  };
+}
+
+function dailyManagementTasks(existingCount = 0) {
+  const needed = Math.max(0, 3 - existingCount);
+  if (!needed) return [];
+  const start = (state.calendarDay - 1) % dailyManagementTemplates.length;
+  return Array.from({ length: Math.min(needed, dailyManagementTemplates.length) }, (_, offset) => {
+    const template = dailyManagementTemplates[(start + offset) % dailyManagementTemplates.length];
+    return {
+      id: `daily-management-${template.key}-${state.calendarDay}`,
+      banner: template.banner,
+      icon: template.icon,
+      phase: template.phase,
+      title: template.title,
+      body: template.body,
+      phone: {
+        title: `第${state.calendarDay}天${template.phoneTitle}`,
+        messages: template.messages,
+      },
+      choices: template.choices,
+    };
+  });
+}
+
 function chapterTasks() {
-  return [dailyNoticeForCurrentState(), dailyIncidentForCurrentState(), ...manualCampusTasks(), ...scheduledStoryTasks()].filter(Boolean);
+  const core = [
+    dailyNoticeForCurrentState(),
+    recurringSupplierTaskForCurrentState(),
+    dailyIncidentForCurrentState(),
+    ...manualCampusTasks(),
+    ...scheduledStoryTasks(),
+  ].filter(Boolean);
+  return [...core, ...dailyManagementTasks(core.length)];
 }
 
 function getMetricSummary() {
+  return metricSummaryFor(state);
+}
+
+function metricSummaryFor(target) {
   return {
-    bank: Math.max(0, Math.round(state.cash)),
-    risk: clamp(Math.round((state.risk * 0.55) + ((100 - state.documents) * 0.3) + ((100 - state.conscience) * 0.15))),
-    traffic: trafficScore(),
+    bank: Math.max(0, Math.round(target.cash)),
+    risk: clamp(Math.round(target.risk * 0.55 + (100 - target.documents) * 0.3 + (100 - target.conscience) * 0.15)),
+    traffic: trafficScoreFor(target),
   };
 }
 
 function trafficScore() {
-  return clamp(Math.round((state.heat * 0.45) + (state.reputation * 0.3) + (state.paidTraffic * 0.25)));
+  return trafficScoreFor(state);
+}
+
+function trafficScoreFor(target) {
+  return clamp(Math.round(target.heat * 0.45 + target.reputation * 0.3 + target.paidTraffic * 0.25));
 }
 
 function isBusinessSuspended() {
   return (state.suspendedUntilDay || 0) >= state.calendarDay;
+}
+
+function dayLengthMinutes() {
+  return dayEnd - dayStart;
+}
+
+function isStallOpenToday() {
+  return state.stallOpenedDay === state.calendarDay;
+}
+
+function stallOpenMinute() {
+  return clamp(Number(state.stallOpenedMinute) || dayStart, dayStart, dayEnd);
+}
+
+function canOpenStallToday() {
+  return state.started && !state.ended && !isBusinessSuspended() && !isStallOpenToday() && state.minute < dayEnd;
+}
+
+function operatedMinutesToday(untilMinute = state.minute) {
+  if (!isStallOpenToday()) return 0;
+  return clamp(Math.min(untilMinute, dayEnd) - stallOpenMinute(), 0, dayLengthMinutes());
+}
+
+function currentOperationRatio() {
+  if (isBusinessSuspended()) return 1;
+  return operatedMinutesToday() / dayLengthMinutes();
+}
+
+function settlementOperationRatio() {
+  if (isBusinessSuspended()) return 1;
+  if (!isStallOpenToday()) return 0;
+  return clamp((dayEnd - stallOpenMinute()) / dayLengthMinutes(), 0, 1);
+}
+
+function scaledDailyEffects(snapshot, ratio) {
+  return {
+    heat: snapshot.dailyHeat * ratio,
+    risk: snapshot.dailyRisk * ratio,
+    reputation: snapshot.dailyReputation * ratio,
+    documents: snapshot.dailyDocuments * ratio,
+    conscience: snapshot.dailyConscience * ratio,
+  };
+}
+
+function missedStallEffects() {
+  return { heat: -2, reputation: -1, risk: 0.4 };
+}
+
+function openStallToday() {
+  if (!canOpenStallToday()) return;
+  state.stallOpenedDay = state.calendarDay;
+  state.stallOpenedMinute = clamp(state.minute, dayStart, dayEnd);
+  const snapshot = operatingSnapshot(state);
+  const ratio = settlementOperationRatio();
+  const expected = Math.round(snapshot.dailyGrossProfit * ratio);
+  const text = `第 ${state.calendarDay} 天 ${formatTime(state.stallOpenedMinute)} 出摊，预计今日净增 ${expected >= 0 ? "+" : ""}${expected} ${currencyName}。`;
+  pushLog(text, { formatted: true });
+  pushHistory(text, { formatted: true });
+  showTicker("今日已出摊，存款会按日收益线性变化。", { formatted: true });
+  render();
 }
 
 const chapters = [
@@ -1484,51 +1959,6 @@ const chapters = [
           },
         ],
       },
-      {
-        id: "final-public",
-        banner: "广场平台",
-        icon: "告",
-        phase: "终局",
-        title: "摊灯亮到最后一晚",
-        body:
-          "我面前摆着群聊、票据、朋友圈、热榜、论坛旧稿和监管记录。我可以把这门生意变回生意，也可以继续把它当成人设。",
-        phone: {
-          title: "全网热议",
-          messages: [
-            ["学生G", "我要的不是完美阿叔，是别骗我。"],
-            ["媒体私信", "方便接受采访吗？"],
-            ["系统提示", "你的经营即将结算。"],
-          ],
-        },
-        choices: [
-          {
-            title: "我公开账本，重开小摊",
-            desc: "把供应商、品类、价格、退款都写清楚。",
-            cost: "结算",
-            reply: "账本公开，菜单重写，过去买错的按规则退。",
-            effects: { reputation: 12, conscience: 14, documents: 18, risk: -16, heat: -10 },
-            flag: ["clearLabel", true],
-            log: "你把账本贴在摊车旁边，队伍短了，但问题少了。",
-          },
-          {
-            title: "我换个城市重新开号",
-            desc: "旧账号沉了，新人设可以再起。",
-            cost: "结算",
-            reply: "旧号暂停，新号从清楚菜单重新开始。",
-            effects: { cash: 12, reputation: -18, conscience: -16, documents: -12, risk: 10, heat: 10 },
-            log: "新号第一条视频还是熟悉的炉火和熟悉的话术。",
-          },
-          {
-            title: "我交给公关公司运营",
-            desc: "从卖腿转向卖故事。",
-            cost: "结算",
-            reply: "以后内容、回应、菜单都走公关口径。",
-            effects: { cash: 8, reputation: -8, conscience: -12, documents: -8, risk: 7, heat: 18 },
-            flag: ["prAgency", true],
-            log: "菜单变成了脚本，顾客变成了镜头里的背景。",
-          },
-        ],
-      },
     ],
   },
 ];
@@ -1555,10 +1985,11 @@ function buildCampusInviteTask(id, marketKey) {
   const market = marketOptions[marketKey];
   if (!market) return null;
   const shortName = market.label.replace(/大学$/, "");
-  const gate = marketKey === "lion" ? "南门" : marketKey === "deer" ? "北门" : "东门";
+  const gate = campusGateForMarket(marketKey);
   const manual = id.startsWith("manual-campus-");
   return {
     id,
+    formattedText: true,
     marketKey,
     campusInvite: true,
     manual,
@@ -1625,13 +2056,23 @@ function scheduledStoryIds() {
     state.calendarDay >= 7 &&
     secondCampus &&
     !state.markets[secondCampus] &&
+    state.marketContacts[secondCampus] === "locked" &&
+    !state.manualCampusRequests?.[secondCampus] &&
     !state.completed["campus-invite-2"] &&
     state.requests["campus-invite-2"] !== "rejected"
   ) {
     id = "campus-invite-2";
   }
   const availableStoryIds = allStoryTasks()
-    .filter((item) => !(item.campusInvite && state.markets[item.marketKey]))
+    .filter(
+      (item) =>
+        !(
+          item.campusInvite &&
+          (state.markets[item.marketKey] ||
+            state.marketContacts[item.marketKey] !== "locked" ||
+            state.manualCampusRequests?.[item.marketKey])
+        ),
+    )
     .map((item) => item.id);
   if (!id) id = selectStoryId(state, summary, availableStoryIds);
   state.dailyStoryKeys ||= {};
@@ -1660,17 +2101,8 @@ function taskKey(taskId) {
   return taskId;
 }
 
-function chapterStartDay(index) {
-  return [1, 6, 9][index] || 1;
-}
-
-function chapterSpanDays(index = state.dayIndex) {
-  return [5, 3, 7][index] || 1;
-}
-
-function chapterElapsedMinutes() {
-  const chapterDay = Math.max(0, state.calendarDay - chapterStartDay(state.dayIndex));
-  return chapterDay * (dayEnd - dayStart) + Math.max(0, state.minute - dayStart);
+function dayElapsedMinutes() {
+  return Math.max(0, state.minute - dayStart);
 }
 
 function gameElapsedMinutes() {
@@ -1688,12 +2120,8 @@ function taskDueOffset(index) {
 
 function taskDueLabel(index) {
   const offset = taskDueOffset(index);
-  const dayOffset = Math.floor(offset / (dayEnd - dayStart));
   const minuteInDay = dayStart + (offset % (dayEnd - dayStart));
-  const absoluteDay = chapterStartDay(state.dayIndex) + dayOffset;
-  return absoluteDay === state.calendarDay
-    ? `${formatTime(minuteInDay)} 截止`
-    : `第 ${absoluteDay} 天 ${formatTime(minuteInDay)} 截止`;
+  return `${formatTime(minuteInDay)} 截止`;
 }
 
 function syncDayIndex() {
@@ -1712,7 +2140,7 @@ function requestStatus(item) {
 }
 
 function chatTitleForTask(item) {
-  return formatText(item.request && requestStatus(item) === "pending" ? item.request.from : item.phone.title);
+  return displayTaskText(item, item.request && requestStatus(item) === "pending" ? item.request.from : item.phone.title);
 }
 
 function latestMessageText(title) {
@@ -1729,26 +2157,22 @@ function chatMessageCount(title, fallbackMessages = []) {
 
 function rememberChat(title, details = {}) {
   if (!title) return;
-  const formattedTitle = formatText(title);
-  const formattedDetails = {
-    ...details,
-    last: details.last ? formatText(details.last) : details.last,
-  };
-  if (!state.knownChats[formattedTitle]) {
-    state.knownChats[formattedTitle] = {
-      title: formattedTitle,
+  const displayTitle = String(title);
+  if (!state.knownChats[displayTitle]) {
+    state.knownChats[displayTitle] = {
+      title: displayTitle,
       unread: 0,
       last: "",
-      kind: formattedDetails.kind || "chat",
+      kind: details.kind || "chat",
     };
-    state.chatOrder.unshift(formattedTitle);
+    state.chatOrder.unshift(displayTitle);
   }
 
-  state.knownChats[formattedTitle] = {
-    ...state.knownChats[formattedTitle],
-    ...formattedDetails,
-    title: formattedTitle,
-    last: formattedDetails.last || latestMessageText(formattedTitle) || state.knownChats[formattedTitle].last || "",
+  state.knownChats[displayTitle] = {
+    ...state.knownChats[displayTitle],
+    ...details,
+    title: displayTitle,
+    last: details.last || latestMessageText(displayTitle) || state.knownChats[displayTitle].last || "",
   };
 }
 
@@ -1767,32 +2191,39 @@ function rememberTaskChat(item) {
   const pending = item.request && requestStatus(item) === "pending";
   rememberChat(title, {
     unread: pending ? 1 : chatMessageCount(item.phone.title, item.phone.messages),
-    last: pending ? formatText(item.request.note) : latestMessageText(title) || formatText(item.phone.messages.at(-1)?.[1] || ""),
+    last: pending
+      ? displayTaskText(item, item.request.note)
+      : latestMessageText(title) || displayTaskText(item, item.phone.messages.at(-1)?.[1] || ""),
     kind: pending ? "request" : "chat",
   });
 }
 
 function findTaskIndexForChat(title) {
-  const formattedTitle = formatText(title);
+  const displayTitle = String(title);
   const tasks = chapterTasks();
   const pendingIndex = tasks.findIndex(
-    (item, index) => isUnlocked(index) && chatTitleForTask(item) === formattedTitle && !isDone(item),
+    (item, index) => isUnlocked(index) && chatTitleForTask(item) === displayTitle && !isDone(item),
   );
   if (pendingIndex >= 0) return pendingIndex;
 
   for (let index = tasks.length - 1; index >= 0; index -= 1) {
-    if (isUnlocked(index) && chatTitleForTask(tasks[index]) === formattedTitle) return index;
+    if (isUnlocked(index) && chatTitleForTask(tasks[index]) === displayTitle) return index;
   }
 
   return -1;
 }
 
-function appendChatMessages(title, messages) {
-  const formattedTitle = formatText(title);
-  state.chatHistory[formattedTitle] ||= [];
-  state.chatHistory[formattedTitle].push(...messages.map(([who, text]) => ({ who: formatText(normalizeSpeaker(who)), text: formatText(text) })));
-  rememberChat(formattedTitle, { last: latestMessageText(formattedTitle) });
-  pinChat(formattedTitle);
+function appendChatMessages(title, messages, options = {}) {
+  const displayTitle = String(title);
+  state.chatHistory[displayTitle] ||= [];
+  state.chatHistory[displayTitle].push(
+    ...messages.map(([who, text]) => ({
+      who: options.formatted ? normalizeSpeaker(who) : formatText(normalizeSpeaker(who)),
+      text: options.formatted ? String(text) : formatText(text),
+    })),
+  );
+  rememberChat(displayTitle, { last: latestMessageText(displayTitle) });
+  pinChat(displayTitle);
 }
 
 function normalizeSpeaker(who) {
@@ -1813,7 +2244,7 @@ function ensureTaskMessages(item) {
   const title = chatTitleForTask(item);
   if (!state.injectedMessages[key]) {
     state.injectedMessages[key] = true;
-    appendChatMessages(title, item.phone.messages);
+    appendChatMessages(title, item.phone.messages, { formatted: item.formattedText });
   }
   rememberTaskChat(item);
 }
@@ -1835,12 +2266,12 @@ function isDone(item) {
 }
 
 function isOverdue(item, index) {
-  return !isDone(item) && chapterElapsedMinutes() > taskDueOffset(index);
+  return !isDone(item) && dayElapsedMinutes() > taskDueOffset(index);
 }
 
 function isUnlocked(index) {
   const item = chapterTasks()[index];
-  return index === 0 || item?.manual || chapterElapsedMinutes() >= taskDueOffset(index) - 60;
+  return index === 0 || item?.manual || dayElapsedMinutes() >= taskDueOffset(index) - 60;
 }
 
 function visibleTasks() {
@@ -1853,16 +2284,17 @@ function visiblePendingTasks() {
 
 function effectiveSpeed() {
   if (state.speed === 0) return 0;
-  return visiblePendingTasks().length ? state.speed : state.speed * 6;
+  return state.speed;
 }
 
 function applyOperatingGrowth(elapsedMinutes = tickMinutes) {
   if (!state.started || state.ended) return;
+  state.paidTraffic = clamp(state.paidTraffic - 0.01, 0, 100);
+  if (!isBusinessSuspended() && !isStallOpenToday()) return;
   const snapshot = operatingSnapshot(state);
   if (snapshot.cashPerMinute) {
     state.cash = Math.max(0, state.cash + snapshot.cashPerMinute * elapsedMinutes);
   }
-  state.paidTraffic = clamp(state.paidTraffic - 0.01, 0, 100);
 }
 
 function processMarketRequests() {
@@ -1878,8 +2310,7 @@ function processMarketRequests() {
     const text = isUniversityMarket(market)
       ? `${marketDisplayOption(market).label} 通过了好友申请，对接聊天已置顶。`
       : `${marketDisplayOption(market).label} 通过了好友申请，可以解锁营业。`;
-    state.log.unshift(text);
-    state.log = state.log.slice(0, 12);
+    pushLog(text);
     pushHistory(text);
     showTicker(text);
   });
@@ -1890,16 +2321,13 @@ function chargeEndOfDayCosts() {
   if (state.dayCostsCharged[key]) return;
   state.dayCostsCharged[key] = true;
   const snapshot = operatingSnapshot(state);
-  applyImmediateEffects({
-    heat: snapshot.dailyHeat,
-    risk: snapshot.dailyRisk,
-    reputation: snapshot.dailyReputation,
-    documents: snapshot.dailyDocuments,
-    conscience: snapshot.dailyConscience,
-  });
+  const ratio = settlementOperationRatio();
+  applyImmediateEffects(ratio > 0 ? scaledDailyEffects(snapshot, ratio) : missedStallEffects());
+  if (ratio > 0) recordSupplyHistory(state.source, "实际出摊", { sales: snapshot.dailySales * ratio });
   const cashDelta = Math.round(state.cash - (state.dayStartCash ?? initialState.cash));
-  state.log.unshift(`今日经营变化：${cashDelta >= 0 ? "+" : ""}${cashDelta} ${currencyName}，风险 ${snapshot.dailyRisk >= 0 ? "+" : ""}${snapshot.dailyRisk}`);
-  state.log = state.log.slice(0, 12);
+  const riskDelta = ratio > 0 ? snapshot.dailyRisk * ratio : missedStallEffects().risk;
+  const stallText = ratio > 0 ? `出摊 ${Math.round(ratio * 100)}%` : "未出摊";
+  pushLog(`今日经营变化：${stallText}，现金 ${cashDelta >= 0 ? "+" : ""}${cashDelta} ${currencyName}，风险 ${riskDelta >= 0 ? "+" : ""}${riskDelta.toFixed(1)}`);
 }
 
 function recordDailyReport() {
@@ -1907,31 +2335,38 @@ function recordDailyReport() {
   const snapshot = operatingSnapshot(state);
   const summary = getMetricSummary();
   const cashDelta = Math.round(state.cash - (state.dayStartCash ?? initialState.cash));
+  const ratio = settlementOperationRatio();
   const report = {
     day: state.calendarDay,
     cashDelta,
-    sales: Math.round(snapshot.dailySales),
+    sales: Math.round(snapshot.dailySales * ratio),
     risk: summary.risk,
     traffic: summary.traffic,
     suspended: snapshot.suspended,
+    operatedRatio: Math.round(ratio * 100),
   };
   state.dayReports.push(report);
   state.dayReports = state.dayReports.slice(-survivalDays);
 
   const sign = cashDelta >= 0 ? "+" : "";
-  const text = `第 ${report.day} 天经营记录：${sign}${cashDelta} ${currencyName}，卖出 ${report.sales} 份，风险 ${report.risk}，流量 ${report.traffic}`;
-  state.log.unshift(text);
-  state.log = state.log.slice(0, 12);
+  const text = `第 ${report.day} 天经营记录：${sign}${cashDelta} ${currencyName}，出摊 ${report.operatedRatio}%，卖出 ${report.sales} 份，风险 ${report.risk}，流量 ${report.traffic}`;
+  pushLog(text);
   pushHistory(text);
 }
 
-function pushHistory(text) {
-  state.history.unshift(`${formatTime(Math.min(state.minute, dayEnd))} ${text}`);
+function pushHistory(text, options = {}) {
+  const displayText = options.formatted ? String(text) : formatText(text);
+  state.history.unshift(`${formatTime(Math.min(state.minute, dayEnd))} ${displayText}`);
   state.history = state.history.slice(0, 30);
 }
 
-function showTicker(text) {
-  state.tickerText = text;
+function pushLog(text, options = {}) {
+  state.log.unshift(options.formatted ? String(text) : formatText(text));
+  state.log = state.log.slice(0, 12);
+}
+
+function showTicker(text, options = {}) {
+  state.tickerText = options.formatted ? String(text) : formatText(text);
   state.tickerUntil = gameElapsedMinutes() + 120;
 }
 
@@ -1959,8 +2394,7 @@ function notifyFeatureUnlocks() {
     if (!label) return;
     state.seenFeatureUnlocks[unlockDay] = true;
     const text = `新模块解锁：${label}`;
-    state.log.unshift(text);
-    state.log = state.log.slice(0, 12);
+    pushLog(text);
     pushHistory(text);
     showTicker(text);
   });
@@ -1977,8 +2411,7 @@ function revealUnlockedEvents() {
     const text = `新消息：${formatText(item.banner)}`;
     const reason = storyTriggerReason(item);
     if (reason) {
-      state.log.unshift(reason);
-      state.log = state.log.slice(0, 12);
+      pushLog(reason);
     }
     pushHistory(text);
     showTicker(text);
@@ -2008,8 +2441,8 @@ function acceptRequest() {
   pinChat(state.activeChatTitle);
   const nextIndex = findTaskIndexForChat(state.activeChatTitle);
   if (nextIndex >= 0) state.activeTask = nextIndex;
-  pushHistory(formatText(active.request.accept));
-  showTicker(formatText(active.request.accept));
+  pushHistory(active.request.accept, { formatted: active.formattedText });
+  showTicker(active.request.accept, { formatted: active.formattedText });
   render();
 }
 
@@ -2025,21 +2458,25 @@ function rejectRequest() {
   state.completed[key] = true;
   state.replies[key] = "我没有通过好友申请。";
   const requestTitle = chatTitleForTask(active);
-  appendChatMessages(requestTitle, [[requestTitle, active.request.note], ["我", "暂时不通过。"]]);
+  appendChatMessages(requestTitle, [[requestTitle, active.request.note], ["我", "暂时不通过。"]], { formatted: active.formattedText });
   rememberChat(requestTitle, { unread: "已拒绝", kind: "request" });
   applyEffects(active.request.rejectEffects || {});
   scoreRoute("evasion", 2);
-  state.log.unshift(formatText(active.request.reject));
-  pushHistory(formatText(active.request.reject));
-  showTicker(formatText(active.request.reject));
+  pushLog(active.request.reject, { formatted: active.formattedText });
+  pushHistory(active.request.reject, { formatted: active.formattedText });
+  showTicker(active.request.reject, { formatted: active.formattedText });
   render();
 }
 
-function applyImmediateEffects(effects = {}) {
+function applyImmediateEffectsTo(target, effects = {}) {
   Object.entries(effects).forEach(([key, delta]) => {
-    if (typeof state[key] !== "number") return;
-    state[key] = key === "cash" ? Math.max(0, state[key] + delta) : clamp(state[key] + delta);
+    if (typeof target[key] !== "number") return;
+    target[key] = key === "cash" ? Math.max(0, target[key] + delta) : clamp(target[key] + delta);
   });
+}
+
+function applyImmediateEffects(effects = {}) {
+  applyImmediateEffectsTo(state, effects);
 }
 
 function normalizeEffects(effects = {}) {
@@ -2053,7 +2490,62 @@ function normalizeEffects(effects = {}) {
 
 function applyEffects(effects = {}, options = {}) {
   const adjustedEffects = normalizeEffects(effects);
+  if (options.duration > 0) {
+    state.effectQueue ||= [];
+    state.effectQueue.push({
+      remaining: options.duration,
+      effects: { ...adjustedEffects },
+    });
+    return;
+  }
   applyImmediateEffects(adjustedEffects);
+}
+
+function choiceText(choice) {
+  return `${choice.title || ""} ${choice.desc || ""} ${choice.cost || ""} ${choice.reply || ""} ${choice.log || ""}`;
+}
+
+function riskControlCost(choice, effects = {}) {
+  const text = choiceText(choice);
+  if (!/送检|退款|补偿|票据|公告|检查|暂停|停售|限量|合同|核销|写清|明示|公开/.test(text)) return 0;
+  const riskDrop = Math.max(0, -(effects.risk || 0));
+  if (!riskDrop) return 0;
+  const docsGain = Math.max(0, effects.documents || 0);
+  const heatDrop = Math.max(0, -(effects.heat || 0));
+  const reputationGain = Math.max(0, effects.reputation || 0);
+  return Math.ceil(riskDrop * 2.4 + docsGain * 0.7 + heatDrop * 0.5 + reputationGain * 0.35);
+}
+
+function effectiveChoiceEffects(choice) {
+  const effects = { ...(choice.effects || {}) };
+  const minimumCost = riskControlCost(choice, effects);
+  if (minimumCost > 0) {
+    effects.cash = Math.min(Number(effects.cash) || 0, -minimumCost);
+  }
+  return effects;
+}
+
+function incomeModifierForChoice(choice) {
+  const text = choiceText(choice);
+  if (/停业|停售|整顿/.test(text)) return null;
+  if (/暂停相关批次|这批先停/.test(text)) return { multiplier: 0.55, days: 1, reason: "暂停批次" };
+  if (/砍掉|减量|少卖/.test(text)) return { multiplier: 0.62, days: 1, reason: "减量出摊" };
+  if (/限量|小规模试营业/.test(text)) return { multiplier: 0.72, days: 1, reason: "限量出摊" };
+  return null;
+}
+
+function applyIncomeModifierTo(target, modifier) {
+  if (!modifier) return;
+  const current = (target.incomeMultiplierUntilDay || 0) >= target.calendarDay ? Number(target.incomeMultiplier) || 1 : 1;
+  target.incomeMultiplier = Math.min(current, modifier.multiplier);
+  target.incomeMultiplierUntilDay = Math.max(target.incomeMultiplierUntilDay || 0, target.calendarDay + modifier.days - 1);
+  target.incomeMultiplierReason = modifier.reason;
+}
+
+function applyIncomeModifier(modifier) {
+  if (!modifier) return;
+  applyIncomeModifierTo(state, modifier);
+  pushLog(`${modifier.reason}：今日日收益倍率 x${modifier.multiplier.toFixed(2)}，少卖会直接压低收入。`);
 }
 
 function drainEffectQueue(elapsedMinutes = tickMinutes) {
@@ -2082,11 +2574,9 @@ function isHonestChoice(choice) {
 function applyHonestPressure(choice) {
   if (!isHonestChoice(choice)) return;
   state.honestDays += 1;
-  applyEffects({ cash: -4, margin: -3, cost: 3, heat: -1 });
 
   if (/鹅腿/.test(choice.title)) {
-    applyEffects({ cash: -6, margin: -5, cost: 8, heat: -3 });
-    state.log.unshift("鹅腿成本太高，定价一涨，小程序下单人数明显少了。");
+    pushLog("鹅腿成本太高，定价一涨，小程序下单人数明显少了。");
   }
 }
 
@@ -2108,42 +2598,69 @@ function setFlag(choice) {
   state.flags[key] = value;
 }
 
-function applyChoiceState(choice) {
+function sourcePatchForChoice(choice) {
+  if (choice.supplySource && sourceOptions[choice.supplySource]) {
+    return { source: choice.supplySource, productFocus: sourceFocusFor(choice.supplySource) };
+  }
   const text = `${choice.title} ${choice.reply || ""} ${choice.log || ""}`;
   if (/主卖鹅腿|只要.*鹅腿|鹅腿实价|鹅腿和完整票据|坚持鹅腿/.test(text)) {
-    state.source = "goose";
-    state.productFocus = "goose";
+    return { source: "goose", productFocus: "goose" };
   } else if (/主卖鸭腿|改卖鸭腿|鲜鸭腿|鸭腿并明示|稳定鲜鸭腿/.test(text)) {
-    state.source = "freshDuck";
-    state.productFocus = "duck";
+    return { source: "freshDuck", productFocus: "duck" };
   } else if (/冻鸭|低价鸭边腿|便宜货|冷库/.test(text)) {
-    state.source = "frozenDuck";
-    state.productFocus = "cheapDuck";
+    return { source: "frozenDuck", productFocus: "cheapDuck" };
   }
+  return null;
 }
 
-function applyNarrativeOperations(choice) {
+function applyChoiceState(choice) {
+  const patch = sourcePatchForChoice(choice);
+  if (!patch) return;
+  state.source = patch.source;
+  state.productFocus = patch.productFocus;
+  recordSupplyHistory(patch.source, choice.supplySource ? "供应商确认" : "剧情切换");
+}
+
+function narrativeOperationForChoice(choice) {
   const text = `${choice.title} ${choice.desc || ""} ${choice.reply || ""} ${choice.log || ""}`;
   const suspendDays = /停业\s*2\s*日|停业\s*两\s*日|停业\s*2\s*天|停业\s*两\s*天|整顿\s*2\s*日|整顿\s*两\s*天/.test(text)
     ? 2
     : /今天停售|主动停售|暂停营业|停业整顿/.test(text)
       ? 1
       : 0;
+  return {
+    suspendDays,
+    suspendReason: suspendDays > 1 ? `停业整顿 ${suspendDays} 天` : suspendDays ? "今日停售整顿" : "",
+    suspendCbdDays: /暂停果猫|果猫先暂停/.test(text) ? 2 : 0,
+    pauseBatch: /暂停相关批次|这批先停|送检/.test(text),
+  };
+}
 
-  if (suspendDays > 0) {
-    state.suspendedUntilDay = Math.max(state.suspendedUntilDay || 0, state.calendarDay + suspendDays - 1);
-    state.suspensionReason = suspendDays > 1 ? `停业整顿 ${suspendDays} 天` : "今日停售整顿";
-    state.log.unshift(`${state.suspensionReason}：销售收入暂停，摊贩只保留待命成本。`);
+function applyNarrativeOperationTo(target, operation) {
+  if (operation.suspendDays > 0) {
+    target.suspendedUntilDay = Math.max(target.suspendedUntilDay || 0, target.calendarDay + operation.suspendDays - 1);
+    target.suspensionReason = operation.suspendReason;
+  }
+  if (operation.suspendCbdDays > 0) {
+    target.marketSuspensions ||= {};
+    target.marketSuspensions.cbd = Math.max(target.marketSuspensions.cbd || 0, target.calendarDay + operation.suspendCbdDays - 1);
+  }
+}
+
+function applyNarrativeOperations(choice) {
+  const operation = narrativeOperationForChoice(choice);
+  applyNarrativeOperationTo(state, operation);
+
+  if (operation.suspendDays > 0) {
+    pushLog(`${state.suspensionReason}：销售收入暂停，摊贩只保留待命成本。`);
   }
 
-  if (/暂停果猫|果猫先暂停/.test(text)) {
-    state.marketSuspensions.cbd = Math.max(state.marketSuspensions.cbd || 0, state.calendarDay + 1);
-    state.log.unshift("果猫商业区暂停 2 天，商业区需求和监管压力暂时移出今日结算。");
+  if (operation.suspendCbdDays > 0) {
+    pushLog("果猫商业区暂停 2 天，商业区需求和监管压力暂时移出今日结算。");
   }
 
-  if (/暂停相关批次|这批先停|送检/.test(text)) {
-    applyEffects({ heat: -2, risk: -4, documents: 4 }, { duration: 180 });
-    state.log.unshift("相关批次暂停销售，短期少卖，检测和票据让风险缓慢下降。");
+  if (operation.pauseBatch) {
+    pushLog("相关批次暂停销售，短期少卖，检测和票据让风险缓慢下降。");
   }
 }
 
@@ -2172,26 +2689,23 @@ function checkEarlyEnding() {
 }
 
 function applyOverduePressure() {
-  if (state.calendarDay < 9) return;
   chapterTasks().forEach((item, index) => {
     if (!isUnlocked(index)) return;
     if (isDone(item)) return;
     const key = taskKey(item.id);
     const due = taskDueOffset(index);
     const hits = state.overdueHits[key] || 0;
-    const nextPenaltyAt = due + hits * 240;
+    const nextPenaltyAt = due + hits * 150;
 
-    if (chapterElapsedMinutes() <= nextPenaltyAt) return;
+    if (dayElapsedMinutes() <= nextPenaltyAt) return;
 
-    applyEffects({ reputation: -0.4, conscience: -0.2, documents: -0.35, risk: 0.45, heat: 0.8 });
+    applyEffects({ reputation: -0.22, conscience: -0.08, documents: -0.12, risk: 0.28, heat: 0.35 });
     state.overdueHits[key] = hits + 1;
-    state.log.unshift(`${formatText(item.banner)} 超时未回复，截图和猜测开始自己长腿。`);
-    state.log = state.log.slice(0, 12);
+    pushLog(`${formatText(item.banner)} 超时未回复，群里开始出现零散猜测。`);
   });
 }
 
 function applyContinuousPressure() {
-  if (state.calendarDay < 9) return;
   if (Math.floor(state.minute) % 45 > tickMinutes) return;
 
   const pending = chapterTasks().filter((item, index) => isUnlocked(index) && !isDone(item)).length;
@@ -2199,17 +2713,17 @@ function applyContinuousPressure() {
   if (!pending) return;
 
   applyEffects({
-    heat: (pending + overdue) * 0.22,
-    risk: overdue * 0.08,
-    reputation: overdue ? -0.12 : 0,
+    heat: (pending + overdue) * 0.08,
+    risk: overdue * 0.035,
+    reputation: overdue ? -0.05 : 0,
   });
 }
 
 function closeUnansweredTasks() {
   const pending = visiblePendingTasks().length;
   if (!pending) return;
-  state.log.unshift(`第 ${state.calendarDay} 天有 ${pending} 个红点没处理，截图和猜测留到了后续经营里。`);
-  state.log = state.log.slice(0, 12);
+  applyImmediateEffects({ heat: pending * 0.4, risk: pending * 0.7, reputation: -pending * 0.25, documents: -pending * 0.2 });
+  pushLog(`第 ${state.calendarDay} 天有 ${pending} 个红点没处理，截图和猜测留到了后续经营里。`);
 }
 
 function choose(index) {
@@ -2217,10 +2731,17 @@ function choose(index) {
   const active = task();
   if (isDone(active)) return;
   const choice = active.choices[index];
+  const disabledReason = choiceDisabledReason(choice);
+  if (disabledReason) {
+    showTicker(disabledReason, { formatted: true });
+    render();
+    return;
+  }
 
-  applyEffects(choice.effects);
+  applyEffects(effectiveChoiceEffects(choice));
   applyHonestPressure(choice);
   applyNarrativeOperations(choice);
+  applyIncomeModifier(incomeModifierForChoice(choice));
   scoreChoiceRoute(choice);
   setFlag(choice);
   applyChoiceState(choice);
@@ -2231,11 +2752,10 @@ function choose(index) {
   state.completed[taskKey(active.id)] = true;
   state.replies[taskKey(active.id)] = choice.reply;
   const activeTitle = chatTitleForTask(active);
-  appendChatMessages(activeTitle, [[replySpeakerForChat(activeTitle), choice.reply]]);
+  appendChatMessages(activeTitle, [[replySpeakerForChat(activeTitle), choice.reply]], { formatted: active.formattedText });
   rememberTaskChat(active);
-  state.log.unshift(formatText(choice.log));
-  pushHistory(`我回复了：${formatText(choice.title)}`);
-  state.log = state.log.slice(0, 12);
+  pushLog(choice.log, { formatted: active.formattedText });
+  pushHistory(`我回复了：${displayTaskText(active, choice.title)}`, { formatted: true });
 
   if (checkEarlyEnding()) return;
   if (state.minute >= dayEnd && canAdvanceFromCurrentDay()) {
@@ -2260,6 +2780,8 @@ function nextDay() {
   state.minute = dayStart;
   if (state.autoPausedForPending) state.speed = 1;
   state.autoPausedForPending = false;
+  state.stallOpenedDay = 0;
+  state.stallOpenedMinute = 0;
   state.dayStartCash = state.cash;
   pushHistory(`剧情推进到第 ${state.calendarDay} 天`);
   render();
@@ -2271,7 +2793,7 @@ function pickSurvivalEnding() {
   const averageCashDelta = reports.length
     ? Math.round(reports.reduce((sum, report) => sum + report.cashDelta, 0) / reports.length)
     : 0;
-  const expanded = state.markets.frog || state.markets.cbd;
+  const expanded = state.markets.cbd || universityMarketKeys.some((key) => state.markets[key]);
   const route = dominantRoute().route;
 
   if (isStableSuccess(state, summary)) {
@@ -2356,10 +2878,11 @@ function tick() {
 
   for (let i = 0; i < steps; i += 1) {
     if (state.ended || state.minute >= dayEnd) break;
-    state.minute += tickMinutes;
-    drainEffectQueue();
+    const advanceMinutes = Math.min(tickMinutes, dayEnd - state.minute);
+    state.minute += advanceMinutes;
+    drainEffectQueue(advanceMinutes);
     processMarketRequests();
-    applyOperatingGrowth(tickMinutes);
+    applyOperatingGrowth(advanceMinutes);
     applyContinuousPressure();
     applyOverduePressure();
   }
@@ -2616,7 +3139,7 @@ function renderMetrics() {
   const snapshot = operatingSnapshot(state);
 
   document.querySelector("#bankValue").textContent = `${bank} ${currencyName}`;
-  document.querySelector("#dailyIncomeValue").textContent = `${Math.round(snapshot.dailyGrossProfit)} ${currencyName}/天`;
+  document.querySelector("#dailyIncomeValue").textContent = state.started ? displayedDailyIncomeText(snapshot) : "待开摊";
   document.querySelector("#riskValue").style.width = `${risk}%`;
   document.querySelector("#riskValue").dataset.value = `${risk}%`;
   document.querySelector("#riskValue").parentElement.setAttribute("aria-label", `风险 ${risk}%`);
@@ -2641,9 +3164,26 @@ function renderMetrics() {
   });
 }
 
+function dailyIncomeText(snapshot = operatingSnapshot(state)) {
+  const multiplier = snapshot.incomeMultiplier < 1 ? ` x${snapshot.incomeMultiplier.toFixed(2)}` : "";
+  return `${Math.round(snapshot.dailyGrossProfit)} ${currencyName}/天${multiplier}`;
+}
+
+function displayedDailyIncomeText(snapshot = operatingSnapshot(state)) {
+  if (snapshot.suspended) return dailyIncomeText(snapshot);
+  if (!isStallOpenToday()) return "待出摊";
+  return dailyIncomeText(snapshot);
+}
+
 function renderStallScene() {
   const scene = $("#stallScene");
   if (!scene) return;
+  if (!state.started) {
+    scene.className = "stall-scene";
+    $("#stallSceneTitle").textContent = "准备开摊";
+    $("#stallSceneText").textContent = "完成新手教程后，价格、摊贩和风险会一起决定今天的生意。";
+    return;
+  }
   const snapshot = operatingSnapshot(state);
   const { risk, traffic } = getMetricSummary();
   const classes = ["stall-scene"];
@@ -2658,6 +3198,9 @@ function renderStallScene() {
     classes.push("suspended", "warning");
     title = "停业整顿中";
     text = "今天不卖货，风险和热度会慢慢回落。";
+  } else if (!isStallOpenToday()) {
+    title = "今日还没出摊";
+    text = `出摊后按 ${Math.round(snapshot.dailyGrossProfit)} ${currencyName}/天入账。`;
   } else {
     if (traffic >= 58) classes.push("busy");
     if (traffic >= 72) classes.push("hot");
@@ -2686,6 +3229,15 @@ function renderStallScene() {
 
 function renderBanners() {
   const list = document.querySelector("#taskBanners");
+  if (!state.started) {
+    list.innerHTML = `
+      <div class="empty-chat-list">
+        <strong>还没有会话</strong>
+        <span>开始营业后，新群聊和好友申请会出现在这里。</span>
+      </div>
+    `;
+    return;
+  }
   const titles = state.chatOrder.filter((title) => state.knownChats[title]);
 
   list.innerHTML = titles.length
@@ -2698,15 +3250,15 @@ function renderBanners() {
           const overdue = item && isOverdue(item, taskIndex);
           const active = title === state.activeChatTitle;
           const unread = pending ? info.unread : info.unread === "已拒绝" ? "已拒绝" : "已读";
-          const displayTitle = formatText(title);
-          const last = formatText(info.last || "暂无消息");
+          const displayTitle = title;
+          const last = info.last || "暂无消息";
           const avatarClass = info.kind === "request" ? "avatar-blue" : `avatar-${avatarTone(title)}`;
           return `
-            <button class="chat-list-item ${active ? "active" : ""} ${overdue ? "overdue" : ""}" type="button" data-chat="${title}">
+            <button class="chat-list-item ${active ? "active" : ""} ${overdue ? "overdue" : ""}" type="button" data-chat="${escapeHtml(title)}">
               <div class="avatar ${avatarClass}" aria-hidden="true"><span></span></div>
               <span class="chat-list-copy">
-                <strong>${displayTitle}</strong>
-                <small>${last}</small>
+                <strong>${escapeHtml(displayTitle)}</strong>
+                <small>${escapeHtml(last)}</small>
               </span>
               <span class="chat-list-meta">
                 <small>${item ? taskDueLabel(taskIndex) : ""}</small>
@@ -2735,13 +3287,13 @@ function renderBanners() {
 
 function renderStoredChat(title) {
   const messages = state.chatHistory[title] || [];
-  document.querySelector("#phoneTitle").textContent = formatText(title);
+  document.querySelector("#phoneTitle").textContent = title;
   document.querySelector("#unreadBadge").textContent = state.knownChats[title]?.unread || "已读";
   document.querySelector("#messages").innerHTML = messages.length
     ? messages
         .map(({ who, text }) => {
-          const displayWho = formatText(who);
-          const displayText = formatText(text);
+          const displayWho = who;
+          const displayText = text;
           const me = isOwnSpeaker(displayWho);
           const avatarClass = me ? "avatar-me" : `avatar-${avatarTone(displayWho)}`;
           return `
@@ -2750,8 +3302,8 @@ function renderStoredChat(title) {
                 <span></span>
               </div>
               <div class="bubble-wrap">
-                <span class="who">${displayWho}</span>
-                <div class="message-bubble">${displayText}</div>
+                <span class="who">${escapeHtml(displayWho)}</span>
+                <div class="message-bubble">${escapeHtml(displayText)}</div>
               </div>
             </div>
           `;
@@ -2768,7 +3320,7 @@ function renderStoredChat(title) {
 
 function renderInactiveChoices(title) {
   document.querySelector("#phaseTag").textContent = "会话";
-  document.querySelector("#eventTitle").textContent = formatText(title);
+  document.querySelector("#eventTitle").textContent = title;
   document.querySelector("#eventBody").textContent = "";
   document.querySelector("#choices").innerHTML = `
     <div class="handled-box">
@@ -2785,8 +3337,8 @@ function renderConversation(active) {
   if (taskIndex >= 0) {
     state.activeTask = taskIndex;
     const current = chapterTasks()[taskIndex];
-    document.querySelector("#phaseTag").textContent = formatText(current.phase);
-    document.querySelector("#eventTitle").textContent = formatText(current.title);
+    document.querySelector("#phaseTag").textContent = displayTaskText(current, current.phase);
+    document.querySelector("#eventTitle").textContent = displayTaskText(current, current.title);
     document.querySelector("#eventBody").textContent = "";
     renderMessages(current);
     renderChoices(current);
@@ -2799,13 +3351,13 @@ function renderConversation(active) {
 
 function renderMessages(active) {
   if (requestStatus(active) === "pending") {
-    document.querySelector("#phoneTitle").textContent = formatText(active.request.from);
+    document.querySelector("#phoneTitle").textContent = displayTaskText(active, active.request.from);
     document.querySelector("#unreadBadge").textContent = "1";
     document.querySelector("#messages").innerHTML = `
       <div class="friend-request">
         <div class="avatar avatar-blue" aria-hidden="true"><span></span></div>
-        <strong>${formatText(active.request.from)}</strong>
-        <p>${formatText(active.request.note)}</p>
+        <strong>${displayTaskText(active, active.request.from)}</strong>
+        <p>${displayTaskText(active, active.request.note)}</p>
       </div>
     `;
     scrollMessagesToBottom();
@@ -2822,8 +3374,8 @@ function renderMessages(active) {
     : chatMessageCount(active.phone.title, active.phone.messages);
   document.querySelector("#messages").innerHTML = messages
     .map(({ who, text }) => {
-      const displayWho = formatText(who);
-      const displayText = formatText(text);
+      const displayWho = who;
+      const displayText = text;
       const me = isOwnSpeaker(displayWho);
       const avatarClass = me ? "avatar-me" : `avatar-${avatarTone(displayWho)}`;
       return `
@@ -2832,8 +3384,8 @@ function renderMessages(active) {
             <span></span>
           </div>
           <div class="bubble-wrap">
-            <span class="who">${displayWho}</span>
-            <div class="message-bubble">${displayText}</div>
+          <span class="who">${escapeHtml(displayWho)}</span>
+          <div class="message-bubble">${escapeHtml(displayText)}</div>
           </div>
         </div>
       `;
@@ -2855,6 +3407,67 @@ function avatarTone(name) {
   let total = 0;
   for (const char of name) total += char.charCodeAt(0);
   return tones[total % tones.length];
+}
+
+function projectedChoiceState(choice) {
+  const projected = structuredClone(state);
+  applyImmediateEffectsTo(projected, normalizeEffects(effectiveChoiceEffects(choice)));
+  applyIncomeModifierTo(projected, incomeModifierForChoice(choice));
+  applyNarrativeOperationTo(projected, narrativeOperationForChoice(choice));
+  const sourcePatch = sourcePatchForChoice(choice);
+  if (sourcePatch) Object.assign(projected, sourcePatch);
+  return projected;
+}
+
+function signedAmount(value, suffix = "") {
+  const rounded = Math.round(value);
+  return `${rounded > 0 ? "+" : ""}${rounded}${suffix}`;
+}
+
+function fuzzyMetricDelta(value) {
+  if (value >= 8) return "++";
+  if (value >= 2) return "+";
+  if (value <= -8) return "——";
+  if (value <= -2) return "-";
+  return "不变";
+}
+
+function choiceImpact(choice) {
+  const effects = effectiveChoiceEffects(choice);
+  const beforeSnapshot = operatingSnapshot(state);
+  const beforeSummary = getMetricSummary();
+  const projected = projectedChoiceState(choice);
+  const afterSnapshot = operatingSnapshot(projected);
+  const afterSummary = metricSummaryFor(projected);
+  const modifier = incomeModifierForChoice(choice);
+  const cashDelta = Number(effects.cash) || 0;
+  const dailyDelta = Math.round(afterSnapshot.dailyGrossProfit - beforeSnapshot.dailyGrossProfit);
+  return {
+    cashDelta,
+    cashCost: Math.max(0, -cashDelta),
+    dailyDelta,
+    riskSignal: fuzzyMetricDelta(afterSummary.risk - beforeSummary.risk),
+    trafficSignal: fuzzyMetricDelta(afterSummary.traffic - beforeSummary.traffic),
+    multiplier: modifier?.multiplier || null,
+  };
+}
+
+function choiceImpactMarkup(choice) {
+  const impact = choiceImpact(choice);
+  return `
+    <span class="choice-impact">
+      <span>现金 ${signedAmount(impact.cashDelta)}</span>
+      <span>日收益 ${signedAmount(impact.dailyDelta, "/天")}${impact.multiplier ? ` x${impact.multiplier.toFixed(2)}` : ""}</span>
+      <span>风险 ${impact.riskSignal}</span>
+      <span>流量 ${impact.trafficSignal}</span>
+    </span>
+  `;
+}
+
+function choiceDisabledReason(choice) {
+  const { cashCost } = choiceImpact(choice);
+  if (cashCost > state.cash) return `现金不足，还差 ${Math.ceil(cashCost - state.cash)} ${currencyName}`;
+  return "";
 }
 
 function renderChoices(active) {
@@ -2890,15 +3503,18 @@ function renderChoices(active) {
     `
     : active.choices
         .map(
-          (choice, index) => `
-            <button class="choice-button" type="button" data-choice="${index}">
+          (choice, index) => {
+            const disabledReason = choiceDisabledReason(choice);
+            return `
+            <button class="choice-button" type="button" data-choice="${index}" ${disabledReason ? `disabled title="${disabledReason}"` : ""}>
               <span>
-                <span class="choice-title">${formatText(choice.title)}</span>
-                <span class="choice-desc">${formatText(choice.desc)}</span>
+                <span class="choice-title">${displayTaskText(active, choice.title)}</span>
+                <span class="choice-desc">${displayTaskText(active, choice.desc)}</span>
               </span>
-              <span class="choice-cost">${formatText(choice.cost)}</span>
+              ${choiceImpactMarkup(choice)}
             </button>
-          `,
+          `;
+          },
         )
         .join("");
 
@@ -2909,12 +3525,12 @@ function renderChoices(active) {
 
 function renderLog() {
   const entries = state.log.length ? state.log : ["摊车刚支起来，账本还是空的。"];
-  document.querySelector("#logList").innerHTML = entries.map((item) => `<li>${item}</li>`).join("");
+  document.querySelector("#logList").innerHTML = entries.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
 }
 
 function renderHistory() {
   const entries = state.history.length ? state.history : ["还没有历史事件。"];
-  $("#historyList").innerHTML = entries.map((item) => `<li>${item}</li>`).join("");
+  $("#historyList").innerHTML = entries.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
 }
 
 function renderRoutePanel() {
@@ -2951,14 +3567,23 @@ function renderRoutePanel() {
 function renderPricingPanel() {
   const input = $("#priceInput");
   const snapshot = operatingSnapshot(state);
-  if (input && Number(input.value) !== state.price) input.value = state.price;
+  if (input) {
+    input.min = priceBounds.min;
+    input.max = priceBounds.max;
+    if (Number(input.value) !== state.price) input.value = state.price;
+  }
   $("#priceLabel").textContent = `${state.price} ${currencyName}`;
-  $("#priceHint").textContent = snapshot.suspended
-    ? `${state.suspensionReason || "停业整顿"}中，今日预计销量为 0，只保留摊贩待命成本。`
-    : `单份毛利约 ${snapshot.unitMargin.toFixed(1)} ${currencyName}，今日预计卖出 ${Math.round(snapshot.dailySales)} 份。` +
-      (snapshot.priceRisk > 0 ? ` 当前售价明显高于参考价，价格质疑会带来 +${Math.round(snapshot.priceRisk)} 风险。` : "") +
-      (snapshot.overloadRatio > 0 ? ` 潜在订单超过产能 ${Math.round(snapshot.overloadRatio * 100)}%，履约风险会上升。` : "") +
-      (snapshot.unitMargin < 0 ? " 当前价格低于成本，卖得越多现金越紧。" : "");
+  if (snapshot.suspended) {
+    $("#priceHint").textContent = `${state.suspensionReason || "停业整顿"}中：今日销量 0，只扣待命成本。`;
+    return;
+  }
+
+  const sales = Math.round(snapshot.dailySales);
+  const margin = snapshot.unitMargin.toFixed(1);
+  const parts = [`预计 ${sales} 份，单份毛利 ${margin} ${currencyName}${snapshot.unitMargin < 0 ? "，越卖越亏" : ""}。`];
+  if (snapshot.priceRisk > 0) parts.push(`高价质疑 +${Math.round(snapshot.priceRisk)} 风险。`);
+  if (snapshot.overloadRatio > 0) parts.push(`订单超产能 ${Math.round(snapshot.overloadRatio * 100)}%。`);
+  $("#priceHint").textContent = parts.join(" ");
 }
 
 function buildDiagnosis(snapshot) {
@@ -2983,6 +3608,11 @@ function buildDiagnosis(snapshot) {
     title = "卖得越多越紧";
     badge = "亏损";
     reasons.push("当前日收益为负，价格、货源或摊贩规模需要立刻调整。");
+    if (snapshot.policy.fixedCost) {
+      reasons.push(`当前出摊强度每天有固定执行成本 ${Math.round(snapshot.policy.fixedCost)} ${currencyName}。`);
+    } else if (snapshot.challengeCost > 0) {
+      reasons.push(`固定压力约 ${Math.round(snapshot.challengeCost)} ${currencyName}，需要更高毛利或收缩规模。`);
+    }
   } else if (summary.risk >= 78) {
     tone = "danger";
     title = "收益被风险盖住";
@@ -3006,7 +3636,8 @@ function buildDiagnosis(snapshot) {
   }
 
   if (reasons.length < 2) {
-    if (snapshot.dailyGrossProfit >= 220) reasons.push(`日收益约 ${Math.round(snapshot.dailyGrossProfit)} ${currencyName}，现金垫子在变厚。`);
+    if (snapshot.dailyGrossProfit < 0) reasons.push(`日收益约 ${Math.round(snapshot.dailyGrossProfit)} ${currencyName}，现金垫子正在变薄。`);
+    else if (snapshot.dailyGrossProfit >= 220) reasons.push(`日收益约 ${Math.round(snapshot.dailyGrossProfit)} ${currencyName}，现金垫子在变厚。`);
     else reasons.push(`日收益约 ${Math.round(snapshot.dailyGrossProfit)} ${currencyName}，增长偏稳但不爆发。`);
   }
 
@@ -3037,16 +3668,27 @@ function renderDiagnosisPanel() {
 
 function renderModelPanel() {
   const snapshot = operatingSnapshot(state);
+  const ratio = settlementOperationRatio();
+  const currentRatio = currentOperationRatio();
+  const expectedActualIncome = Math.round(snapshot.dailyGrossProfit * ratio);
+  const expectedSales = Math.round(snapshot.dailySales * ratio);
+  const expectedEffects = ratio > 0 ? scaledDailyEffects(snapshot, ratio) : missedStallEffects();
   $("#modelPanel").innerHTML = `
     <div class="model-grid">
-      <div><span>预计销量</span><strong>${Math.round(snapshot.dailySales)} 份</strong></div>
-      <div><span>日收益</span><strong>${Math.round(snapshot.dailyGrossProfit)} ${currencyName}</strong></div>
-      <div><span>风险变化</span><strong>${snapshot.dailyRisk >= 0 ? "+" : ""}${Math.round(snapshot.dailyRisk)}</strong></div>
-      <div><span>流量变化</span><strong>${snapshot.dailyHeat >= 0 ? "+" : ""}${Math.round(snapshot.dailyHeat)}</strong></div>
+      <div><span>预计销量</span><strong>${expectedSales} 份</strong></div>
+      <div><span>日收益</span><strong>${dailyIncomeText(snapshot)}</strong></div>
+      <div><span>风险变化</span><strong>${expectedEffects.risk >= 0 ? "+" : ""}${Math.round(expectedEffects.risk)}</strong></div>
+      <div><span>流量变化</span><strong>${expectedEffects.heat >= 0 ? "+" : ""}${Math.round(expectedEffects.heat)}</strong></div>
       <div><span>单份毛利</span><strong>${snapshot.unitMargin.toFixed(1)} ${currencyName}</strong></div>
-      <div><span>固定压力</span><strong>${Math.round(snapshot.challengeCost || 0)} ${currencyName}</strong></div>
+      <div><span>今日入账</span><strong>${expectedActualIncome >= 0 ? "+" : ""}${expectedActualIncome} ${currencyName}</strong></div>
     </div>
-    <p>${snapshot.suspended ? "停业期间没有销售收入，只扣少量待命成本。" : "存款会按日收益在当天连续变化；风险、流量、口碑和票据会随经营记录推进。"}</p>
+    <p>${
+      snapshot.suspended
+        ? "停业期间没有销售收入，只扣少量待命成本。"
+        : isStallOpenToday()
+          ? `今天已出摊 ${Math.round(currentRatio * 100)}%，收入按时间线性进入存款。`
+          : "今日尚未出摊，预计销量和今日入账会在点击出摊后按剩余时间计算。"
+    }</p>
   `;
 }
 
@@ -3066,8 +3708,12 @@ function renderOptionPanel(id, options, activeKey, dataName) {
 function marketReadiness(market) {
   const option = marketDisplayOption(market);
   const traffic = trafficScore();
+  const availableStaff = availableStaffForMarket(state, market);
+  const assignedStaff = requiredStaffForActiveMarkets(state);
   return {
-    staffReady: state.staff >= option.requiredStaff,
+    staffReady: state.markets[market] || availableStaff >= option.requiredStaff,
+    availableStaff,
+    assignedStaff,
     trafficReady: traffic >= option.requiredTraffic,
     traffic,
   };
@@ -3076,7 +3722,7 @@ function marketReadiness(market) {
 function marketBlockReason(market, moneyCost) {
   const option = marketDisplayOption(market);
   const readiness = marketReadiness(market);
-  if (!readiness.staffReady) return `需 ${option.requiredStaff} 人`;
+  if (!readiness.staffReady) return `空闲 ${readiness.availableStaff}/${option.requiredStaff} 人`;
   if (!readiness.trafficReady) return `流量 ${option.requiredTraffic}`;
   if (state.cash < moneyCost) return `还差 ${Math.ceil(moneyCost - state.cash)} ${currencyName}`;
   return "";
@@ -3146,7 +3792,9 @@ function renderMarketPanel() {
           </div>
           <p>${market.desc}</p>
           <div class="market-requirements">
-            <span class="${readiness.staffReady ? "ready" : ""}">摊贩 ${state.staff}/${market.requiredStaff}</span>
+            <span class="${readiness.staffReady ? "ready" : ""}">${
+              unlocked ? `占用 ${market.requiredStaff} 人` : `空闲 ${readiness.availableStaff}/${market.requiredStaff} 人`
+            }</span>
             <span class="${readiness.trafficReady ? "ready" : ""}">流量 ${readiness.traffic}/${market.requiredTraffic}</span>
           </div>
           <div class="market-stats">
@@ -3161,14 +3809,18 @@ function renderMarketPanel() {
 }
 
 function renderStaffPanel() {
+  const assigned = requiredStaffForActiveMarkets(state);
+  const free = Math.max(0, state.staff - assigned);
   $("#staffLabel").textContent = `${state.staff} 人`;
-  $("#staffHint").textContent = `日工资 ${state.staff * operatingModel.staffDailyWage} ${currencyName}，产能 ${Math.round(operatingSnapshot(state).dailyCapacity)} 份/日`;
+  $("#staffHint").textContent = `已分配 ${assigned} 人，空闲 ${free} 人，日工资 ${state.staff * operatingModel.staffDailyWage} ${currencyName}`;
   $$("[data-staff-delta]").forEach((button) => {
     const delta = Number(button.dataset.staffDelta);
     const next = state.staff + delta;
     const reason =
       next < 1
         ? "至少保留 1 名摊贩"
+        : next < assigned
+          ? `已营业区域占用 ${assigned} 人`
         : next > 6
           ? "最多 6 名摊贩"
           : delta > 0 && state.cash < operatingModel.staffHiringCost
@@ -3176,7 +3828,7 @@ function renderStaffPanel() {
             : delta > 0
               ? `雇 1 人花费 ${operatingModel.staffHiringCost} ${currencyName}`
               : "减少 1 名摊贩，产能下降但工资减少";
-    button.disabled = next < 1 || next > 6 || (delta > 0 && state.cash < operatingModel.staffHiringCost);
+    button.disabled = next < 1 || next < assigned || next > 6 || (delta > 0 && state.cash < operatingModel.staffHiringCost);
     button.title = reason;
     button.setAttribute("aria-label", reason);
   });
@@ -3221,7 +3873,49 @@ function renderFeatureVisibility() {
   if (state.started && !state.ended) notifyFeatureUnlocks();
 }
 
+function renderDayControls() {
+  const openButton = $("#openStallButton");
+  if (openButton) {
+    const suspended = isBusinessSuspended();
+    const opened = isStallOpenToday();
+    openButton.disabled = !canOpenStallToday();
+    openButton.classList.toggle("done", opened);
+    openButton.textContent = !state.started
+      ? "完成教程"
+      : state.ended
+        ? "已结束"
+        : suspended
+          ? "停业中"
+          : opened
+            ? "已出摊"
+            : "今日出摊";
+    openButton.title = opened
+      ? `今天 ${formatTime(stallOpenMinute())} 已出摊`
+      : suspended
+        ? `${state.suspensionReason || "停业整顿"}中`
+        : "点击后今天才开始按日收益入账";
+    openButton.setAttribute("aria-label", openButton.title);
+  }
+
+  $$("[data-speed]").forEach((button) => {
+    button.classList.toggle("active", Number(button.dataset.speed) === state.speed);
+  });
+}
+
+function renderDayProgress() {
+  const progress = $("#dayProgressValue");
+  if (!progress) return;
+  const percent = state.started ? clamp((dayElapsedMinutes() / dayLengthMinutes()) * 100, 0, 100) : 0;
+  progress.style.width = `${percent}%`;
+}
+
 function renderProgress() {
+  renderDayProgress();
+  if (!state.started) {
+    $("#dayStatus").textContent = "等待开摊";
+    renderDayControls();
+    return;
+  }
   const visiblePending = visibleTasks().filter((item) => !isDone(item)).length;
   const locked = chapterTasks().length - visibleTasks().length;
   const { risk } = getMetricSummary();
@@ -3234,14 +3928,14 @@ function renderProgress() {
       ? "风险临界，优先降风险"
       : risk >= 68
         ? "风险偏高，别只顾收益"
+    : !isStallOpenToday()
+      ? "今日未出摊，存款不会增长"
     : visiblePending
     ? "有新消息待处理"
     : locked
-      ? `等待新消息，时间快进中`
-      : "今日经营自动推进中";
-  $$("[data-speed]").forEach((button) => {
-    button.classList.toggle("active", Number(button.dataset.speed) === state.speed);
-  });
+      ? "等待新消息"
+      : "今日经营推进中";
+  renderDayControls();
   const pauseButton = $("#pauseButton");
   if (pauseButton) {
     const paused = state.speed === 0;
@@ -3283,7 +3977,7 @@ function render() {
   document.querySelector(".reply-panel").classList.remove("ending");
   document.querySelector("#dayLabel").textContent = `第 ${state.calendarDay} 天`;
   document.querySelector("#eventTitle").textContent = formatText(current.title);
-  document.querySelector("#phaseTag").textContent = formatText(active.phase);
+  document.querySelector("#phaseTag").textContent = displayTaskText(active, active.phase);
   document.querySelector("#eventBody").textContent = "";
 
   renderStats();
@@ -3414,11 +4108,11 @@ function renderEnding(ending) {
   $("#taskBanners").hidden = true;
   $("#conversationView").hidden = true;
   $("#endingView").hidden = false;
-  $("#endingTitle").textContent = ending.name;
-  $("#endingBody").textContent = ending.body;
+  $("#endingTitle").textContent = formatText(ending.name);
+  $("#endingBody").textContent = formatText(ending.body);
   renderEndingScorecard();
   $("#endingAnalysis").innerHTML = endingAnalysisRows(ending)
-    .map(([label, text]) => `<div><strong>${label}</strong><span>${text}</span></div>`)
+    .map(([label, text]) => `<div><strong>${formatText(label)}</strong><span>${formatText(text)}</span></div>`)
     .join("");
   renderStats();
   renderMetrics();
@@ -3435,11 +4129,7 @@ function resetGame() {
   savedGame = null;
   state = structuredClone(initialState);
   tutorialIndex = 0;
-  const input = $("#schoolNameInput");
-  if (input) {
-    input.value = "";
-    delete input.dataset.ready;
-  }
+  clearSchoolSetup();
   $("#introOverlay").classList.remove("hidden");
   $("#introOverlay").hidden = false;
   renderTutorial();
@@ -3457,7 +4147,8 @@ function renderTutorial() {
   const step = tutorialSteps[tutorialIndex];
   const hasSave = Boolean(savedGame);
   const showSchoolSetup = step.setup === "school" && !hasSave;
-  const input = $("#schoolNameInput");
+  const input = showSchoolSetup ? ensureSchoolSetup() : null;
+  if (!showSchoolSetup) clearSchoolSetup();
   if (input && showSchoolSetup && !input.dataset.ready) {
     input.value = "";
     input.dataset.ready = "true";
@@ -3471,10 +4162,10 @@ function renderTutorial() {
   });
   const isLast = tutorialIndex === tutorialSteps.length - 1;
   $(".tutorial-actions").hidden = hasSave;
+  $("#skipTutorialButton").textContent = isLast ? "重看教程" : "跳过教程";
   $("#nextTutorialButton").hidden = hasSave || isLast;
   $("#startButton").hidden = hasSave || !isLast;
   $("#savePanel").hidden = !hasSave;
-  $(".school-setup").hidden = !showSchoolSetup;
   setSchoolNameError();
   if (savedGame) $("#saveSummary").textContent = savedGameSummary();
 }
@@ -3485,13 +4176,19 @@ function nextTutorialStep() {
 }
 
 function skipTutorial() {
-  tutorialIndex = tutorialSteps.length - 1;
+  tutorialIndex = tutorialIndex === tutorialSteps.length - 1 ? 0 : tutorialSteps.length - 1;
   renderTutorial();
-  $("#schoolNameInput")?.focus();
+  if (tutorialIndex === tutorialSteps.length - 1) $("#schoolNameInput")?.focus();
 }
 
 function startGame() {
-  const input = $("#schoolNameInput");
+  if (tutorialIndex !== tutorialSteps.length - 1) {
+    tutorialIndex = tutorialSteps.length - 1;
+    renderTutorial();
+    $("#schoolNameInput")?.focus();
+    return false;
+  }
+  const input = ensureSchoolSetup();
   const validation = syncSchoolNameInput(input);
   if (!validation.ok) {
     setSchoolNameError(validation.message, true);
@@ -3526,7 +4223,9 @@ function startFreshRun() {
 }
 
 function setPrice(value) {
-  const nextPrice = clamp(Number(value), 12, 100);
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return;
+  const nextPrice = clamp(Math.round(parsed), priceBounds.min, priceBounds.max);
   if (nextPrice === state.price) return;
   state.price = nextPrice;
   renderMetrics();
@@ -3547,27 +4246,31 @@ function setMainTab(tab) {
 }
 
 function setPolicy(policy) {
-  if (!policyOptions[policy] || state.policy === policy) return;
+  if (!policyOptions[policy]) return;
+  if (state.policy === policy) {
+    showTicker(`当前已经是：${policyOptions[policy].label}。`);
+    renderOperatingPanels();
+    renderProgress();
+    return;
+  }
   state.policy = policy;
-  if (policy === "transparent") scoreRoute("compliance", 1);
+  if (policy === "transparent") scoreRoute("contraction", 1);
   if (policy === "hype") scoreRoute("hype", 1);
   if (policy === "balanced") scoreRoute("contraction", 0.5);
-  const effects =
-    policy === "transparent"
-      ? { cash: -6, reputation: 4, documents: 6, risk: -5, heat: -2 }
-      : policy === "hype"
-        ? { cash: 8, heat: 10, risk: 5, reputation: -2 }
-        : { cash: 2, heat: 2, risk: -1 };
-  applyImmediateEffects(effects);
-  state.log.unshift(`经营政策改为：${policyOptions[policy].label}。`);
-  state.log = state.log.slice(0, 12);
+  pushLog(`出摊强度改为：${policyOptions[policy].label}。日收益、销量和风险会按新节奏重新计算。`);
   render();
 }
 
 function setSource(source) {
-  if (!sourceOptions[source] || state.source === source) return;
+  if (!sourceOptions[source]) return;
+  if (state.source === source) {
+    showTicker(`当前已经是：${sourceOptions[source].label}。`);
+    renderOperatingPanels();
+    renderProgress();
+    return;
+  }
   state.source = source;
-  state.productFocus = source === "goose" ? "goose" : source === "freshDuck" ? "duck" : "cheapDuck";
+  state.productFocus = sourceFocusFor(source);
   if (source === "goose") scoreRoute("compliance", 1);
   if (source === "freshDuck") scoreRoute("goodwill", 0.5);
   if (source === "frozenDuck") scoreRoute("evasion", 1);
@@ -3578,8 +4281,8 @@ function setSource(source) {
         ? { cash: 2, reputation: 2, documents: 2, risk: -2 }
         : { cash: 12, heat: 7, risk: 8, reputation: -3, documents: -6 };
   applyImmediateEffects(effects);
-  state.log.unshift(`货源改为：${sourceOptions[source].label}。`);
-  state.log = state.log.slice(0, 12);
+  recordSupplyHistory(source, "经营面板切换");
+  pushLog(`货源改为：${sourceOptions[source].label}。`);
   render();
 }
 
@@ -3588,7 +4291,7 @@ function toggleMarket(market) {
   if (state.markets[market]) {
     state.markets[market] = false;
     scoreRoute("contraction", 1);
-    state.log.unshift(`${marketDisplayOption(market).label} 暂停营业，订单规模收缩。`);
+    pushLog(`${marketDisplayOption(market).label} 暂停营业，订单规模收缩。`);
     render();
     return;
   }
@@ -3617,8 +4320,7 @@ function toggleMarket(market) {
   applyEffects({ heat: 4, risk: 2 }, { duration: 90 });
   state.markets[market] = true;
   scoreRoute(market === "cbd" ? "hype" : "contraction", 1);
-  state.log.unshift(`${marketDisplayOption(market).label} 解锁，新的取餐和舆论压力开始进入经营。`);
-  state.log = state.log.slice(0, 12);
+  pushLog(`${marketDisplayOption(market).label} 解锁，新的取餐和舆论压力开始进入经营。`);
   render();
 }
 
@@ -3631,8 +4333,7 @@ function openUniversityMarket(market, source = "incoming") {
   scoreRoute("hype", source === "manual" ? 0.5 : 1);
   if (!wasOpen) {
     const text = `${marketDisplayOption(market).label} 开始营业，跨校订单进入需求曲线。`;
-    state.log.unshift(text);
-    state.log = state.log.slice(0, 12);
+    pushLog(text);
     pushHistory(text);
     showTicker(text);
   }
@@ -3649,8 +4350,7 @@ function requestMarketContact(market) {
   const text = isUniversityMarket(market)
     ? `我向${option.label}发出入驻申请，等对方来对接。`
     : `我向${option.label}发出好友申请，等对方通过后才能开团。`;
-  state.log.unshift(text);
-  state.log = state.log.slice(0, 12);
+  pushLog(text);
   pushHistory(text);
   showTicker(text);
   render();
@@ -3661,8 +4361,7 @@ function improveReputation() {
   state.cash = Math.max(0, state.cash - operatingModel.reputationCost);
   applyEffects({ reputation: 7, documents: 2, heat: -1 }, { duration: 120 });
   scoreRoute("goodwill", 1);
-  state.log.unshift("我做了公开补偿和口碑维护，声望会逐步回升。");
-  state.log = state.log.slice(0, 12);
+  pushLog("我做了公开补偿和口碑维护，声望会逐步回升。");
   render();
 }
 
@@ -3672,25 +4371,25 @@ function buyTraffic() {
   applyEffects({ heat: 5, risk: 1 }, { duration: 90 });
   state.paidTraffic = clamp(state.paidTraffic + operatingModel.trafficBoost, 0, 100);
   scoreRoute("hype", 1);
-  state.log.unshift("我买了一轮同城流量，短期需求和曝光会上升。");
-  state.log = state.log.slice(0, 12);
+  pushLog("我买了一轮同城流量，短期需求和曝光会上升。");
   render();
 }
 
 function changeStaff(delta) {
   const next = state.staff + delta;
+  const assigned = requiredStaffForActiveMarkets(state);
   if (next < 1 || next > 6) return;
+  if (next < assigned) return;
   if (delta > 0) {
     if (state.cash < operatingModel.staffHiringCost) return;
     state.cash = Math.max(0, state.cash - operatingModel.staffHiringCost);
     applyEffects({ dailyExpense: 2, risk: 1 }, { duration: 60 });
-    state.log.unshift("我临时雇了一名摊贩，产能上升，工资和管理压力也上升。");
+    pushLog("我临时雇了一名摊贩，产能上升，工资和管理压力也上升。");
   } else {
     scoreRoute("contraction", 1);
-    state.log.unshift("我减少了一名摊贩，产能下降，固定开支也少了。");
+    pushLog("我减少了一名摊贩，产能下降，固定开支也少了。");
   }
   state.staff = next;
-  state.log = state.log.slice(0, 12);
   render();
 }
 
@@ -3704,6 +4403,7 @@ $("#settingsButton").addEventListener("click", () => {
   $("#settingsPanel").hidden = false;
 });
 $("#pauseButton").addEventListener("click", togglePause);
+$("#openStallButton").addEventListener("click", openStallToday);
 $("#closeSettingsButton").addEventListener("click", () => {
   $("#settingsPanel").hidden = true;
 });
@@ -3712,17 +4412,6 @@ $$("[data-main-tab]").forEach((button) => {
 });
 $("#priceInput").addEventListener("input", (event) => {
   setPrice(event.target.value);
-});
-$("#schoolNameInput").addEventListener("input", (event) => {
-  if (event.isComposing || event.target.dataset.composing === "true") return;
-  syncSchoolNameInput(event.target);
-});
-$("#schoolNameInput").addEventListener("compositionstart", (event) => {
-  event.target.dataset.composing = "true";
-});
-$("#schoolNameInput").addEventListener("compositionend", (event) => {
-  delete event.target.dataset.composing;
-  syncSchoolNameInput(event.target);
 });
 $("#policyPanel").addEventListener("click", (event) => {
   const button = event.target.closest("[data-policy]");
@@ -3744,7 +4433,7 @@ $$("[data-staff-delta]").forEach((button) => {
 $$("[data-speed]").forEach((button) => {
   button.addEventListener("click", () => {
     state.speed = Number(button.dataset.speed);
-    renderProgress();
+    render();
   });
 });
 $("#nextTutorialButton").addEventListener("click", nextTutorialStep);

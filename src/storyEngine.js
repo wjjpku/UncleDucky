@@ -109,6 +109,7 @@ function fallbackStoryIds(context) {
 
 export function selectStoryId(state, summary, validIds = null) {
   const context = buildStoryContext(state, summary);
+  if (context.day >= 15) return null;
   const valid = validIds ? new Set(validIds) : null;
   const candidates = [primaryStoryId(context, state), ...fallbackStoryIds(context)].filter((id) => id && (!valid || valid.has(id)));
   return pickFirstAvailable(state, candidates);

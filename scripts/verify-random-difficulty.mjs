@@ -1,6 +1,15 @@
 import { readFileSync } from "node:fs";
-import { initialState, operatingModel, policyOptions, sourceOptions, survivalDays } from "../src/config.js";
-import { operatingSnapshot } from "../src/economy.js";
+import {
+  initialState,
+  marketOptions,
+  operatingModel,
+  policyOptions,
+  priceBounds,
+  sourceOptions,
+  survivalDays,
+  universityMarketKeys,
+} from "../src/config.js";
+import { availableStaffForMarket, operatingSnapshot } from "../src/economy.js";
 import { isRiskFailure, isStableSuccess } from "../src/successCriteria.js";
 import { clamp } from "../src/utils.js";
 
@@ -71,13 +80,26 @@ function applyDailyState(state, snapshot) {
   state.paidTraffic = clamp(state.paidTraffic - 18, 0, 100);
 }
 
+function universityTargets(state) {
+  const homeName = state.homeSchoolName || initialState.homeSchoolName;
+  const configured = state.selectedUniversityMarkets || [];
+  const fallback = universityMarketKeys.filter((key) => marketOptions[key]?.label !== homeName);
+  return [...configured, ...fallback]
+    .filter((key, index, list) => universityMarketKeys.includes(key) && marketOptions[key]?.label !== homeName && list.indexOf(key) === index)
+    .slice(0, 2);
+}
+
+function canOpenMarket(state, key, fullCost = marketOptions[key]?.contactCost || 0) {
+  const option = marketOptions[key];
+  const summary = metricSummary(state);
+  return option && availableStaffForMarket(state, key) >= option.requiredStaff && summary.traffic >= option.requiredTraffic && state.cash >= fullCost;
+}
+
 function randomBusinessActions(state, rng, day) {
   state.policy = choice(rng, Object.keys(policyOptions));
   state.source = choice(rng, Object.keys(sourceOptions));
   const source = sourceOptions[state.source];
-  const priceFloor = Math.max(8, Math.round(source.referencePrice * 0.65));
-  const priceCeiling = Math.min(100, Math.round(source.referencePrice * 3));
-  state.price = Math.round(priceFloor + rng() * (priceCeiling - priceFloor));
+  state.price = Math.round(priceBounds.min + rng() * (priceBounds.max - priceBounds.min));
   state.productFocus = state.source === "goose" ? "goose" : state.source === "freshDuck" ? "duck" : "cheapDuck";
 
   if (rng() < 0.28 && state.cash >= operatingModel.reputationCost) {
@@ -99,13 +121,20 @@ function randomBusinessActions(state, rng, day) {
   }
 
   if (rng() < 0.18 && state.staff > 1) state.staff -= 1;
-  if (day >= 4 && rng() < 0.22 && state.staff >= 2 && state.cash >= 80) {
-    state.cash -= 80;
-    state.markets.frog = true;
+  if (day >= 4 && rng() < 0.22) {
+    const unopenedUniversities = universityTargets(state).filter((key) => !state.markets[key]);
+    const key = unopenedUniversities.length ? choice(rng, unopenedUniversities) : null;
+    if (key && canOpenMarket(state, key, marketOptions[key].contactCost)) {
+      state.cash -= marketOptions[key].contactCost;
+      state.markets[key] = true;
+    }
   }
-  if (day >= 7 && rng() < 0.18 && state.staff >= 3 && state.cash >= 180) {
-    state.cash -= 180;
-    state.markets.cbd = true;
+  if (day >= 7 && rng() < 0.18) {
+    const cbdCost = marketOptions.cbd.contactCost + marketOptions.cbd.unlockCost;
+    if (!state.markets.cbd && canOpenMarket(state, "cbd", cbdCost)) {
+      state.cash -= cbdCost;
+      state.markets.cbd = true;
+    }
   }
 }
 

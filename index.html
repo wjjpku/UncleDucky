@@ -19,14 +19,6 @@
             <li>聊天里处理红点，回复会影响口碑、合规和剧情路线。</li>
             <li>经营里调价格、政策、货源、摊贩和区域。</li>
           </ul>
-          <label class="school-setup" for="schoolNameInput" hidden>
-            <span>起步学校</span>
-            <span class="school-name-field">
-              <input id="schoolNameInput" type="text" placeholder="最多五个字" autocomplete="off" />
-              <b>大学</b>
-            </span>
-            <small id="schoolNameError">后续聊天和市场都会使用这个名字。</small>
-          </label>
         </div>
         <div class="tutorial-progress" aria-hidden="true">
           <span class="active"></span>
@@ -36,6 +28,7 @@
           <span></span>
           <span></span>
         </div>
+        <div id="tutorialSetupHost" class="tutorial-setup-host"></div>
         <div class="tutorial-actions">
           <button id="skipTutorialButton" class="secondary-button" type="button">跳过教程</button>
           <button id="nextTutorialButton" class="primary-button" type="button">下一步</button>
@@ -55,14 +48,15 @@
       <section class="game-shell" aria-labelledby="game-title">
         <header class="game-header">
           <img class="brand-avatar" src="./assets/stall-avatar.png" width="256" height="256" decoding="async" alt="" />
-          <div>
+          <div class="brand-copy">
             <p class="eyebrow">虚构经营游戏</p>
             <h1 id="game-title">鸭腿叔叔</h1>
           </div>
+          <div class="top-time" aria-label="当前天数和日内进度">
+            <span id="dayLabel">第 1 天</span>
+            <strong class="day-progress" aria-hidden="true"><i id="dayProgressValue"></i></strong>
+          </div>
           <div class="header-actions">
-            <div class="top-time" aria-label="时间进度">
-              <span id="dayLabel">第 1 天</span>
-            </div>
             <button id="pauseButton" class="icon-button pause-button" type="button" aria-label="暂停" title="暂停">⏸</button>
             <button id="settingsButton" class="icon-button" type="button" aria-label="设置" title="设置">⚙</button>
           </div>
@@ -110,6 +104,16 @@
           </div>
         </section>
 
+        <section class="day-controls" aria-label="每日操作">
+          <button id="openStallButton" class="stall-button" type="button">今日出摊</button>
+          <div class="speed-control" aria-label="时间速度">
+            <button class="speed-button" type="button" data-speed="0.5">0.5x</button>
+            <button class="speed-button active" type="button" data-speed="1">1x</button>
+            <button class="speed-button" type="button" data-speed="2">2x</button>
+            <button class="speed-button" type="button" data-speed="4">4x</button>
+          </div>
+        </section>
+
         <nav class="main-tabs" aria-label="主栏目">
           <button class="main-tab active" type="button" data-main-tab="chat">聊天</button>
           <button class="main-tab" type="button" data-main-tab="control">经营</button>
@@ -122,7 +126,7 @@
             <section id="conversationView" class="conversation-view" aria-label="当前对话" hidden>
               <div class="phone-head">
                 <button id="backToChatsButton" class="back-button" type="button" aria-label="返回聊天列表">‹</button>
-                <span id="phoneTitle">起步学校西门烤腿群34</span>
+                <span id="phoneTitle">聊天</span>
                 <span id="unreadBadge">0</span>
               </div>
               <div id="messages" class="messages"></div>
@@ -149,7 +153,7 @@
               <div class="pricing-panel" aria-label="定价">
                 <label class="price-control">
                   <span>售价</span>
-                  <input id="priceInput" type="range" min="12" max="100" step="1" value="22" />
+                  <input id="priceInput" type="range" min="0" max="100" step="1" value="22" />
                   <strong id="priceLabel">22 鸭币</strong>
                 </label>
                 <div id="priceHint" class="panel-hint"></div>
@@ -193,8 +197,8 @@
             </section>
 
             <section class="compact-section" data-feature-day="2">
-              <div class="panel-title">政策</div>
-              <div id="policyPanel" class="option-panel" aria-label="经营政策"></div>
+              <div class="panel-title">出摊强度</div>
+              <div id="policyPanel" class="option-panel" aria-label="出摊强度"></div>
             </section>
 
             <section class="compact-section" data-feature-day="2">

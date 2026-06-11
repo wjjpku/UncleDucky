@@ -1,5 +1,5 @@
-import { initialState, marketOptions, operatingModel, sourceOptions, survivalDays } from "../src/config.js";
-import { operatingSnapshot } from "../src/economy.js";
+import { initialState, marketOptions, operatingModel, priceBounds, sourceOptions, survivalDays, universityMarketKeys } from "../src/config.js";
+import { availableStaffForMarket, operatingSnapshot } from "../src/economy.js";
 import { isRiskFailure } from "../src/successCriteria.js";
 import { clamp } from "../src/utils.js";
 
@@ -21,7 +21,8 @@ export const strategies = {
     source: "frozenDuck",
     buyTrafficEvery: 4,
     hireAtCash: 500,
-    expandFrogAt: 450,
+    hireUntil: 6,
+    expandCampusAt: 450,
     expandCbdAt: 1100,
   },
   premium: {
@@ -50,16 +51,69 @@ function applyDailyState(state, snapshot) {
   state.paidTraffic = clamp(state.paidTraffic - 18, 0, 100);
 }
 
+export function bestPriceForState(state) {
+  let best = null;
+  for (let price = priceBounds.min; price <= priceBounds.max; price += 1) {
+    const snapshot = operatingSnapshot({ ...state, price });
+    const candidate = { price, snapshot };
+    if (
+      !best ||
+      snapshot.dailyGrossProfit > best.snapshot.dailyGrossProfit ||
+      (snapshot.dailyGrossProfit === best.snapshot.dailyGrossProfit && snapshot.dailyRisk < best.snapshot.dailyRisk) ||
+      (snapshot.dailyGrossProfit === best.snapshot.dailyGrossProfit &&
+        snapshot.dailyRisk === best.snapshot.dailyRisk &&
+        price < best.price)
+    ) {
+      best = candidate;
+    }
+  }
+  return best;
+}
+
 function canOpenMarket(state, key) {
   const market = marketOptions[key];
   const traffic = metricSummary(state).traffic;
-  return state.staff >= market.requiredStaff && traffic >= market.requiredTraffic && state.cash >= market.unlockCost;
+  const cost = key === "cbd" ? market.unlockCost : market.contactCost;
+  return availableStaffForMarket(state, key) >= market.requiredStaff && traffic >= market.requiredTraffic && state.cash >= cost;
+}
+
+function universityTargets(state, strategy) {
+  const homeName = state.homeSchoolName || initialState.homeSchoolName;
+  const configured = strategy.selectedUniversityMarkets || state.selectedUniversityMarkets || [];
+  const fallback = universityMarketKeys.filter((key) => marketOptions[key]?.label !== homeName);
+  return [...configured, ...fallback]
+    .filter((key, index, list) => universityMarketKeys.includes(key) && marketOptions[key]?.label !== homeName && list.indexOf(key) === index)
+    .slice(0, 2);
+}
+
+function openUniversityMarketForSimulation(state, key) {
+  if (!canOpenMarket(state, key)) return false;
+  state.cash -= marketOptions[key].contactCost;
+  state.markets[key] = true;
+  return true;
+}
+
+function openCbdForSimulation(state) {
+  const option = marketOptions.cbd;
+  const fullCost = option.contactCost + option.unlockCost;
+  if (
+    state.markets.cbd ||
+    availableStaffForMarket(state, "cbd") < option.requiredStaff ||
+    metricSummary(state).traffic < option.requiredTraffic ||
+    state.cash < fullCost
+  ) {
+    return false;
+  }
+  state.cash -= fullCost;
+  state.markets.cbd = true;
+  return true;
 }
 
 function applyStrategyActions(state, strategy, day) {
-  state.price = strategy.price;
+  if (strategy.optimizePrice === false) state.price = strategy.price;
   state.policy = strategy.policy;
   state.source = strategy.source;
+  if (strategy.selectedUniversityMarkets) state.selectedUniversityMarkets = universityTargets(state, strategy);
 
   if (strategy.improveEvery && day % strategy.improveEvery === 0 && state.cash >= operatingModel.reputationCost) {
     state.cash -= operatingModel.reputationCost;
@@ -75,19 +129,24 @@ function applyStrategyActions(state, strategy, day) {
     state.risk = clamp(state.risk + 0.6);
   }
 
-  if (strategy.hireAtCash && state.staff < 3 && state.cash >= strategy.hireAtCash) {
+  if (strategy.hireAtCash && state.staff < (strategy.hireUntil || 3) && state.cash >= strategy.hireAtCash) {
     state.cash -= operatingModel.staffHiringCost;
     state.staff += 1;
   }
 
-  if (strategy.expandFrogAt && !state.markets.frog && state.cash >= strategy.expandFrogAt && canOpenMarket(state, "frog")) {
-    state.cash -= marketOptions.frog.unlockCost;
-    state.markets.frog = true;
+  if (strategy.expandCampusAt && state.cash >= strategy.expandCampusAt) {
+    const targetCount = strategy.expandCampusCount || 1;
+    const targets = universityTargets(state, strategy);
+    let openedCount = targets.filter((key) => state.markets[key]).length;
+    for (const key of targets) {
+      if (openedCount >= targetCount) break;
+      if (state.markets[key]) continue;
+      if (openUniversityMarketForSimulation(state, key)) openedCount += 1;
+    }
   }
 
-  if (strategy.expandCbdAt && !state.markets.cbd && state.cash >= strategy.expandCbdAt && canOpenMarket(state, "cbd")) {
-    state.cash -= marketOptions.cbd.unlockCost;
-    state.markets.cbd = true;
+  if (strategy.expandCbdAt && state.cash >= strategy.expandCbdAt) {
+    openCbdForSimulation(state);
   }
 }
 
@@ -99,6 +158,8 @@ export function simulate(name, strategy) {
   for (let day = 1; day <= survivalDays; day += 1) {
     state.calendarDay = day;
     applyStrategyActions(state, strategy, day);
+    const optimal = strategy.optimizePrice === false ? null : bestPriceForState(state);
+    if (optimal) state.price = optimal.price;
     const snapshot = operatingSnapshot(state);
     applyDailyState(state, snapshot);
     const summary = metricSummary(state);
@@ -107,6 +168,7 @@ export function simulate(name, strategy) {
       cash: summary.bank,
       risk: summary.risk,
       traffic: summary.traffic,
+      price: state.price,
       documents: Math.round(state.documents),
       profit: Math.round(snapshot.dailyGrossProfit),
       sales: Math.round(snapshot.dailySales),

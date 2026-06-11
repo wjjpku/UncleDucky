@@ -5,6 +5,7 @@ export const realSecondsPerDay = 40;
 export const tickMinutes = ((dayEnd - dayStart) * tickMs) / (realSecondsPerDay * 1000);
 export const currencyName = "鸭币";
 export const survivalDays = 15;
+export const priceBounds = { min: 0, max: 100 };
 
 export const whaleGooseGroup = "白鲸大学西门鹅腿群34";
 export const whaleDuckGroup = "白鲸大学西门鸭腿群34";
@@ -23,6 +24,8 @@ export const initialState = {
   speed: 1,
   autoPausedForPending: false,
   tickCarry: 0,
+  stallOpenedDay: 0,
+  stallOpenedMinute: 0,
   cash: 120,
   dayStartCash: 120,
   reputation: 58,
@@ -35,6 +38,9 @@ export const initialState = {
   cost: 28,
   dailyExpense: 22,
   honestDays: 0,
+  incomeMultiplier: 1,
+  incomeMultiplierUntilDay: 0,
+  incomeMultiplierReason: "",
   activeMainTab: "chat",
   homeSchoolName: defaultHomeSchoolName,
   selectedUniversityMarkets: [],
@@ -42,6 +48,7 @@ export const initialState = {
   policy: "balanced",
   source: "freshDuck",
   productFocus: "duck",
+  supplyHistory: [],
   staff: 1,
   paidTraffic: 0,
   markets: {
@@ -143,8 +150,8 @@ export const routeRules = [
 
 export const policyOptions = {
   transparent: {
-    label: "明示稳摊",
-    desc: "写清原料、限量接单，流量慢一些，风险涨得慢。",
+    label: "限量出摊",
+    desc: "少接单、慢出餐，销量和曝光下降，核销更清楚。",
     demandMultiplier: 0.86,
     capacityPerDay: 72,
     operatingCost: 2,
@@ -154,7 +161,7 @@ export const policyOptions = {
     goodwill: 0.55,
   },
   balanced: {
-    label: "正常经营",
+    label: "正常出摊",
     desc: "维持普通团购节奏，收益和风险都按当前规模累积。",
     demandMultiplier: 1,
     capacityPerDay: 95,
@@ -165,8 +172,8 @@ export const policyOptions = {
     goodwill: 0,
   },
   hype: {
-    label: "冲量营销",
-    desc: "多发券、多吆喝，订单和热度更快，舆论与履约风险也更快。",
+    label: "加量出摊",
+    desc: "多发券、多吆喝，订单和热度更快，履约风险也更快。",
     demandMultiplier: 1.28,
     capacityPerDay: 126,
     operatingCost: 2.4,
@@ -194,7 +201,7 @@ export const sourceOptions = {
   },
   freshDuck: {
     label: "主卖鸭腿",
-    desc: "稳定、成本中等，只要明示清楚就适合长期经营。",
+    desc: "稳定、成本中等；如果明示清楚，风险低但利润会被合规成本压薄。",
     unitCost: 14,
     referencePrice: 22,
     priceElasticity: 1.2,

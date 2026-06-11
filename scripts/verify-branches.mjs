@@ -1,5 +1,6 @@
 import { initialState } from "../src/config.js";
 import { selectStoryId, storyReasonForItem } from "../src/storyEngine.js";
+import { readFileSync } from "node:fs";
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -97,6 +98,13 @@ const acceptedFrog = makeState({
 });
 assert(branchFor(acceptedFrog) === "frog-campus", "accepted request should remain available until the formal chat is answered");
 
+const finalDay = makeState({ calendarDay: 15 });
+assert(branchFor(finalDay) === null, "final day should not expose an intermediate settlement choice");
+
+const gameSource = readFileSync(new URL("../game.js", import.meta.url), "utf8");
+assert(!gameSource.includes("final-public"), "removed final settlement task should not remain in game source");
+assert(!gameSource.includes("经营即将结算"), "intermediate settlement prompt should not remain in game source");
+
 const reason = storyReasonForItem(honestBusiness, summaryFor(honestBusiness), { id: "final-supplier" });
 assert(reason.includes("诚信经营线"), "honest late route should explain fulfillment pressure");
 
@@ -111,5 +119,6 @@ console.log(JSON.stringify({
   riskyBusiness: branchFor(riskyBusiness),
   rejectedFrog: branchFor(rejectedFrog),
   acceptedFrog: branchFor(acceptedFrog),
+  finalDay: branchFor(finalDay),
   reason,
 }, null, 2));

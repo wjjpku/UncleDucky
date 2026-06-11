@@ -59,19 +59,47 @@ button {
   line-height: 1.7;
 }
 
+.tutorial-setup-host:empty {
+  display: none;
+}
+
+.tutorial-setup-host {
+  margin-top: 14px;
+}
+
+.school-dialog {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(47, 123, 104, 0.38);
+  background: #eef7ef;
+}
+
+.school-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.school-dialog h3 {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.school-dialog-head span {
+  flex: 0 0 auto;
+  color: var(--green);
+  font-size: 11px;
+  font-weight: 900;
+}
+
 .school-setup {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 8px;
-  margin-top: 14px;
-  padding: 10px;
-  border: 1px solid rgba(47, 123, 104, 0.35);
-  background: #eef7ef;
-}
-
-.school-setup[hidden] {
-  display: none;
 }
 
 .school-setup span,
@@ -226,10 +254,16 @@ button {
 }
 
 .game-header {
+  position: relative;
   flex: 0 0 auto;
+  min-height: 42px;
   padding-bottom: 8px;
   border-bottom: 1px solid var(--line);
   justify-content: flex-start;
+  min-width: 0;
+}
+
+.brand-copy {
   min-width: 0;
 }
 
@@ -290,20 +324,43 @@ h2 {
 }
 
 .top-time {
-  display: flex;
-  width: auto;
-  justify-content: flex-end;
+  position: absolute;
+  top: 0;
+  left: 50%;
+  display: grid;
+  width: 116px;
+  transform: translateX(-50%);
   color: var(--muted);
   font-size: 11px;
   font-weight: 900;
 }
 
 #dayLabel {
-  flex: 0 0 auto;
-  padding: 5px 8px;
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
   border: 1px solid rgba(34, 31, 27, 0.18);
   background: #ffffff;
   font-weight: 900;
+  text-align: center;
+}
+
+.day-progress {
+  display: block;
+  width: 100%;
+  height: 5px;
+  margin-top: 2px;
+  overflow: hidden;
+  border: 1px solid rgba(34, 31, 27, 0.12);
+  background: #e6e4dc;
+}
+
+.day-progress i {
+  display: block;
+  width: 0%;
+  height: 100%;
+  background: linear-gradient(90deg, var(--green), var(--amber));
+  transition: width 140ms linear;
 }
 
 .status-strip {
@@ -742,12 +799,13 @@ h2 {
 }
 
 .panel-hint {
+  display: -webkit-box;
   overflow: hidden;
   color: var(--muted);
   font-size: 12px;
   line-height: 1.45;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .diagnosis-panel {
@@ -965,23 +1023,54 @@ h2 {
   background: var(--green);
 }
 
+.day-controls {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+
+.stall-button {
+  flex: 1 1 42%;
+  min-height: 34px;
+  border: 1px solid #8f5a2b;
+  background: var(--coal);
+  color: #fff7e8;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.stall-button.done {
+  border-color: #4c8f54;
+  background: var(--green);
+}
+
+.stall-button:disabled {
+  border-color: var(--line);
+  background: #eeeeee;
+  color: var(--muted);
+  cursor: default;
+}
+
 .speed-control {
   display: flex;
+  flex: 1 1 58%;
   overflow: hidden;
-  margin-bottom: 14px;
   border: 1px solid var(--line);
   background: #fff7e8;
 }
 
 .speed-button {
-  min-width: 58px;
+  flex: 1 1 0;
+  min-width: 0;
   min-height: 34px;
   border: 0;
   border-right: 1px solid var(--line);
   color: var(--muted);
   background: transparent;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 900;
 }
 
@@ -1584,7 +1673,7 @@ h2 {
 
 .choice-button {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 0.9fr);
   gap: 12px;
   width: 100%;
   min-height: 48px;
@@ -1599,6 +1688,11 @@ h2 {
 .choice-button:hover {
   border-color: #81c784;
   background: #eef9ef;
+}
+
+.choice-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .choice-title {
@@ -1620,6 +1714,27 @@ h2 {
   color: var(--red);
   font-size: 11px;
   font-weight: 900;
+  white-space: nowrap;
+}
+
+.choice-impact {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-self: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.choice-impact span {
+  overflow: hidden;
+  padding: 3px 4px;
+  border: 1px solid rgba(34, 31, 27, 0.12);
+  background: #fff8e8;
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1.2;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -1881,7 +1996,7 @@ h2 {
   }
 
   .game-header {
-    min-height: 36px;
+    min-height: 39px;
     padding-bottom: 6px;
     gap: 8px;
   }
@@ -1900,6 +2015,10 @@ h2 {
     gap: 6px;
   }
 
+  .top-time {
+    width: 104px;
+  }
+
   .icon-button {
     width: 28px;
     height: 28px;
@@ -1907,7 +2026,7 @@ h2 {
   }
 
   #dayLabel {
-    padding: 4px 6px;
+    padding: 5px 8px;
   }
 
   .money-panel {
@@ -2073,7 +2192,18 @@ h2 {
     grid-template-columns: 1fr;
   }
 
-  .choice-cost {
+  .day-controls {
+    gap: 6px;
+  }
+
+  .stall-button,
+  .speed-button {
+    min-height: 32px;
+    font-size: 11px;
+  }
+
+  .choice-cost,
+  .choice-impact span {
     white-space: normal;
   }
 }

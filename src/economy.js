@@ -8,6 +8,19 @@ export function activeMarketEntries(state) {
   });
 }
 
+export function requiredStaffForActiveMarkets(state, excludedKey = "") {
+  return activeMarketEntries(state).reduce((sum, [key, market]) => (key === excludedKey ? sum : sum + market.requiredStaff), 0);
+}
+
+export function availableStaffForMarket(state, key = "") {
+  return Math.max(0, state.staff - requiredStaffForActiveMarkets(state, key));
+}
+
+export function activeIncomeMultiplier(state) {
+  if ((state.incomeMultiplierUntilDay || 0) < state.calendarDay) return 1;
+  return clamp(Number(state.incomeMultiplier) || 1, 0, 1);
+}
+
 function trafficScore(state) {
   return clamp(Math.round(state.heat * 0.55 + state.reputation * 0.35 + state.paidTraffic * 0.1));
 }
@@ -57,7 +70,9 @@ export function operatingSnapshot(state) {
     policy.demandMultiplier *
     clamp(0.65 + traffic / 120, 0.65, 1.35);
   const capacity = state.staff * operatingModel.staffCapacityPerDay * (policy.capacityPerDay / 95) * source.supplyReliability;
-  const sales = suspended ? 0 : Math.min(demand, capacity);
+  const incomeMultiplier = suspended ? 0 : activeIncomeMultiplier(state);
+  const salesBeforeMultiplier = Math.min(demand, capacity);
+  const sales = suspended ? 0 : salesBeforeMultiplier * incomeMultiplier;
   const unitMargin = state.price - source.unitCost - policy.operatingCost;
   const priceRisk = suspended ? 0 : priceRiskPressure(state, source);
   const wages = state.staff * operatingModel.staffDailyWage;
@@ -66,7 +81,8 @@ export function operatingSnapshot(state) {
     extraMarketCount * operatingModel.extraMarketLogisticsCost +
     Math.max(0, state.staff - 1) * operatingModel.extraStaffManagementCost;
   const sourceFixedCost = (source.fixedCost || 0) + extraMarketCount * (source.extraMarketCost || 0);
-  const challengeCost = pressure.cost + pressure.lateCost + extraMarketCount * 12 + sourceFixedCost;
+  const policyFixedCost = policy.fixedCost || 0;
+  const challengeCost = pressure.cost + pressure.lateCost + extraMarketCount * 12 + sourceFixedCost + policyFixedCost;
   const dailyGrossProfit = suspended
     ? -Math.round(wages * operatingModel.suspensionWageRate + challengeCost * 0.3)
     : Math.round(sales * unitMargin - wages - logistics - challengeCost);
@@ -102,6 +118,8 @@ export function operatingSnapshot(state) {
     dailyBaseDemand: baseDemand,
     dailyPotentialDemand: demand,
     dailyCapacity: capacity,
+    incomeMultiplier,
+    salesBeforeMultiplier,
     dailySales: sales,
     overloadRatio,
     complianceCoverage,
