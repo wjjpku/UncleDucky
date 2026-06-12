@@ -74,7 +74,7 @@ const whaleGooseGroup = "白鲸大学西南门鹅腿群34";
 const whaleDuckGroup = "白鲸大学西南门鸭腿群34";
 const frogGooseGroup = "青蛙大学东门鹅腿群35";
 const frogDuckGroup = "青蛙大学东门鸭腿群35";
-const uncleGroupNick = "鸭腿叔叔-好友满了请加114514";
+const auntGroupNick = "鸭腿阿姨-好友满了请加114514";
 
 function groupsRenamedAfterIncident() {
   return Boolean(state.flags.clearLabel || state.flags.apology || state.flags.studentRefund);
@@ -95,9 +95,9 @@ const dailyNoticeTask = {
     title: whaleGooseGroup,
     unread: 1,
     messages: [
-      [uncleGroupNick, "🙋配送信息都在下单小程序主页里啦~"],
-      [uncleGroupNick, "🍖专属优惠券已发放，领券下单更划算!"],
-      [uncleGroupNick, "晚7:30左右送到，等到11:20左右。毕业季啦，同学们吃一次少一次呢，想吃请下单啦🌹 @所有人"],
+      [auntGroupNick, "🙋配送信息都在下单小程序主页里啦~"],
+      [auntGroupNick, "🍖专属优惠券已发放，领券下单更划算!"],
+      [auntGroupNick, "晚7:30左右送到，等到11:20左右。毕业季啦，同学们吃一次少一次呢，想吃请下单啦🌹 @所有人"],
     ],
   },
   choices: [
@@ -291,10 +291,10 @@ const chapters = [
           title: "白鲸大学西南门鹅腿群34",
           unread: 328,
           messages: [
-            ["鸭腿叔叔-好友满了请加114514", "🏃到了到了到了 请到西南门外左手边取"],
-            ["鸭腿叔叔-好友满了请加114514", "🙋配送信息都在下单小程序主页里啦~"],
-            ["鸭腿叔叔-好友满了请加114514", "🍖专属优惠券已发放，领券下单更划算!"],
-            ["鸭腿叔叔-好友满了请加114514", "晚7:30左右送到，等到11:20左右。毕业季啦，同学们吃一次少一次呢，想吃请下单啦🌹 @所有人"],
+            ["鸭腿阿姨-好友满了请加114514", "🏃到了到了到了 请到西南门外左手边取"],
+            ["鸭腿阿姨-好友满了请加114514", "🙋配送信息都在下单小程序主页里啦~"],
+            ["鸭腿阿姨-好友满了请加114514", "🍖专属优惠券已发放，领券下单更划算!"],
+            ["鸭腿阿姨-好友满了请加114514", "晚7:30左右送到，等到11:20左右。毕业季啦，同学们吃一次少一次呢，想吃请下单啦🌹 @所有人"],
             ["学生A", "辣和不辣腿到了吗？我小程序下单了。"],
             ["学生B", "到门口是给你看截图取吗？"],
           ],
@@ -672,7 +672,7 @@ const chapters = [
           title: "微博",
           unread: 119,
           messages: [
-            ["热搜", "#鸭腿叔叔小程序商品名改了#"],
+            ["热搜", "#鸭腿阿姨小程序商品名改了#"],
             ["私信", "本地号想采访你，问以前十几块是不是鸭腿。"],
             ["评论", "别讲烟火气，先把小程序商品页截图发出来。"],
           ],
@@ -764,7 +764,7 @@ const chapters = [
           unread: 72,
           messages: [
             ["活动同学", "今晚 8:10-8:30 之间送到吗？外面冷，到了群里通知一下🌹"],
-            ["鸭腿叔叔-好友满了请加114514", "参加小橙书 AMA 的同学，到西南门外领取，工作人员看发布的笔记和团号就可以取。"],
+            ["鸭腿阿姨-好友满了请加114514", "参加小橙书 AMA 的同学，到西南门外领取，工作人员看发布的笔记和团号就可以取。"],
             ["学生", "我下单了但没赶上，可以免费领吗？"],
           ],
         },
@@ -902,7 +902,7 @@ const chapters = [
           title: "小橙书搬运群",
           unread: 421,
           messages: [
-            ["王海", "叔叔，请问腿中间绿色的是什么，好像味道不太对。"],
+            ["王海", "阿姨，请问腿中间绿色的是什么，好像味道不太对。"],
             ["搬运号", "旧图和小程序订单截图都找到了，标题怎么写？"],
             ["评论", "这到底是葱汁腌料还是坏了？"],
             ["学生H", "没有检测报告就别瞎定性，但商家得解释。"],
@@ -943,7 +943,7 @@ const chapters = [
         title: "商业区档口递来合同",
         request: {
           from: "星桥商业区招商经理",
-          note: "我们夜市档口缺一个爆款小吃。押一付三，统一收银，能不能把鸭腿叔叔开进来？",
+          note: "我们夜市档口缺一个爆款小吃。押一付三，统一收银，能不能把鸭腿阿姨开进来？",
           accept: "我通过了商业区招商经理好友申请。",
           reject: "我拒绝了商业区档口，招商经理把档期转给了另一个烤腿摊。",
           rejectEffects: { cash: -3, heat: -3, reputation: 2 },
@@ -972,7 +972,7 @@ const chapters = [
             title: "我只授权他们挂名",
             desc: "不出人不出票，来钱快但失控。",
             cost: "失控扩张",
-            reply: "你们可以挂鸭腿叔叔名号，供货自己解决。",
+            reply: "你们可以挂鸭腿阿姨名号，供货自己解决。",
             effects: { cash: 18, reputation: -10, conscience: -12, documents: -14, risk: 18, heat: 14, margin: 10 },
             log: "商业区出现挂名档口，菜单和口味很快开始变形。",
           },
@@ -1048,11 +1048,11 @@ const chapters = [
         body:
           "国贸 CBD 群里有人举报，说你在商业区卖的仍按鹅腿故事传播，实际公告又写成鸭腿。群公告被截图，开始往微博扩散。",
         phone: {
-          title: "国贸CBD-6群鸭腿叔叔(206)",
+          title: "国贸CBD-6群鸭腿阿姨(206)",
           unread: 206,
           messages: [
             ["群公告", "大家好，国贸本周不过来了，下周待定。被群里某位上班精英举报，正在配合相关部门工作。"],
-            [uncleGroupNick, "原材料是鸭腿，以后都会给大家写清楚，介意请勿下单。鸭腿叔叔叫了十几年，不存在故意欺骗宣传，耽误大家时间，万分抱歉🙏"],
+            [auntGroupNick, "原材料是鸭腿，以后都会给大家写清楚，介意请勿下单。鸭腿阿姨叫了十几年，不存在故意欺骗宣传，耽误大家时间，万分抱歉🙏"],
             ["上班族A", "所以国贸这边之前买的到底是什么？"],
             ["转发截图", "公告已经发微博了。"],
           ],
@@ -1144,7 +1144,7 @@ const chapters = [
           title: "全网热议",
           unread: 2048,
           messages: [
-            ["学生G", "我要的不是完美叔叔，是别骗我。"],
+            ["学生G", "我要的不是完美阿姨，是别骗我。"],
             ["媒体私信", "方便接受采访吗？"],
             ["系统提示", "你的经营即将结算。"],
           ],
@@ -1307,15 +1307,15 @@ function appendChatMessages(title, messages) {
 }
 
 function normalizeSpeaker(who) {
-  return who === "鸭腿叔叔" ? "我" : who;
+  return who === "鸭腿阿姨" ? "我" : who;
 }
 
 function isOwnSpeaker(who) {
-  return who === "我" || who === uncleGroupNick;
+  return who === "我" || who === auntGroupNick;
 }
 
 function replySpeakerForChat(title) {
-  return title.includes("群") ? uncleGroupNick : "我";
+  return title.includes("群") ? auntGroupNick : "我";
 }
 
 function ensureTaskMessages(item) {
